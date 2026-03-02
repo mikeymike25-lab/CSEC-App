@@ -7,6 +7,7 @@ import {
   TouchableOpacity, 
   SafeAreaView, 
   Platform,
+  Image,
   StatusBar,
   TouchableWithoutFeedback,
   Keyboard
@@ -22,12 +23,14 @@ export default function LoginScreen() {
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor="#F9F7E8" />
         
-        {/* We remove behavior or set it to null to keep the screen fixed */}
         <View style={styles.innerContainer}>
           
-          {/* Logo Section */}
-          <Text style={styles.logoText}>C-SEC</Text>
-
+         <Image 
+           
+            source={require('../assets/images/C-SECLOGO.png')} 
+            style={styles.logoImage}
+            resizeMode="contain" 
+          />
           {/* Input Fields */}
           <View style={styles.inputContainer}>
             <TextInput 
@@ -78,9 +81,6 @@ export default function LoginScreen() {
             <TouchableOpacity style={styles.socialIconBox}>
                <FontAwesome name="google" size={24} color="#cd382a" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.socialIconBox}>
-               <FontAwesome name="facebook" size={24} color="#4267B2" />
-            </TouchableOpacity>
           </View>
 
         </View>
@@ -97,15 +97,14 @@ const styles = StyleSheet.create({
   innerContainer: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center', // Keeps content centered even when keyboard is open
+    justifyContent: 'center',
     paddingHorizontal: 30,
   },
-  logoText: {
-    fontSize: 48,
-    fontWeight: '900',
-    color: '#000',
-    letterSpacing: 2,
-    marginBottom: 60,
+  
+  logoImage: {
+    width: 400, 
+    height: 250, 
+    marginBottom: 0,
   },
   inputContainer: {
     width: '100%',
