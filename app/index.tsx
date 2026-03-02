@@ -13,9 +13,12 @@ import {
   Keyboard
 } from 'react-native';
 import { Ionicons, FontAwesome } from '@expo/vector-icons'; 
+import { useRouter } from 'expo-router'; 
 
 export default function LoginScreen() {
+  const router = useRouter();
   const [passwordVisible, setPasswordVisible] = useState(false);
+  
 
   return (
     // TouchableWithoutFeedback allows closing the keyboard by tapping the background
@@ -67,12 +70,12 @@ export default function LoginScreen() {
           </TouchableOpacity>
 
           {/* Sign Up Link */}
-          <View style={styles.signupContainer}>
+        <View style={styles.signupContainer}>
             <Text style={styles.signupText}>Don't have an account yet? </Text>
-            <TouchableOpacity>
-              <Text style={styles.signupLink}>Sign up</Text>
-            </TouchableOpacity>
-          </View>
+         <TouchableOpacity onPress={() => router.push('/signup')}> 
+            <Text style={styles.signupLink}>Sign up</Text>
+          </TouchableOpacity>
+        </View>
 
           <View style={styles.divider} />
 
