@@ -6,7 +6,6 @@ import {
   TextInput, 
   TouchableOpacity, 
   SafeAreaView, 
-  Platform,
   Image,
   StatusBar,
   TouchableWithoutFeedback,
@@ -19,7 +18,6 @@ export default function LoginScreen() {
   const router = useRouter();
   const [passwordVisible, setPasswordVisible] = useState(false);
   
-
   return (
     // TouchableWithoutFeedback allows closing the keyboard by tapping the background
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -29,11 +27,11 @@ export default function LoginScreen() {
         <View style={styles.innerContainer}>
           
          <Image 
-           
             source={require('../assets/images/C-SECLOGO.png')} 
             style={styles.logoImage}
             resizeMode="contain" 
           />
+          
           {/* Input Fields */}
           <View style={styles.inputContainer}>
             <TextInput 
@@ -65,7 +63,11 @@ export default function LoginScreen() {
           </View>
 
           {/* Login Button */}
-          <TouchableOpacity style={styles.loginButton} activeOpacity={0.8}>
+          <TouchableOpacity 
+            style={styles.loginButton} 
+            activeOpacity={0.8}
+            onPress={() => router.replace('/tabs')} 
+          >
             <Text style={styles.loginButtonText}>LOGIN</Text>
           </TouchableOpacity>
 
@@ -103,7 +105,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 30,
   },
-  
   logoImage: {
     width: 400, 
     height: 250, 
