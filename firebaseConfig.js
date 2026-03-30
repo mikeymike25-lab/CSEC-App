@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth"; 
+import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
   apiKey: "AIzaSyB31xKjVidGXJ3NlHQDfb_dxnte0C8jgrI", 
@@ -17,3 +18,4 @@ const app = initializeApp(firebaseConfig);
 // Export services to use them in your screens
 export const db = getFirestore(app);
 export const auth = getAuth(app);
+export const storage = getStorage(app);

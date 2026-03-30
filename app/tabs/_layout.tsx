@@ -3,15 +3,22 @@ import { View, Text, StyleSheet, Platform, StatusBar } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const TabIcon = ({ name, label, focused }: { name: any, label: string, focused: boolean }) => {
+// --- IMPORT THE THEME TOWER ---
+import { useTheme } from '../../context/ThemeContext';
+
+const TabIcon = ({ name, label, focused, isDark }: { name: any, label: string, focused: boolean, isDark: boolean }) => {
+  // Define active color for the focused pill
+  const activePillColor = isDark ? '#4DA8DA' : '#1E3246';
+  const inactiveTextColor = isDark ? '#606A75' : '#8A9AA9';
+
   return (
-    <View style={[styles.tabItem, focused && styles.tabItemFocused]}>
+    <View style={[styles.tabItem, focused && { backgroundColor: activePillColor }]}>
       <MaterialCommunityIcons 
         name={name} 
         size={24} 
-        color={focused ? '#FFFFFF' : '#8A9AA9'} 
+        color={focused ? '#FFFFFF' : inactiveTextColor} 
       />
-      <Text style={[styles.tabLabel, { color: focused ? '#FFFFFF' : '#8A9AA9' }]}>
+      <Text style={[styles.tabLabel, { color: focused ? '#FFFFFF' : inactiveTextColor }]}>
         {label}
       </Text>
     </View>
@@ -20,11 +27,22 @@ const TabIcon = ({ name, label, focused }: { name: any, label: string, focused: 
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets(); 
+  
+  // 1. Grab the theme state
+  const { isDark } = useTheme();
+
+  // 2. Define dynamic navigation colors
+  const barBgColor = isDark ? '#1A242E' : '#FBFBF9';
+  const headerBgColor = isDark ? '#121A21' : '#FBFBF9';
+  const headerTextColor = isDark ? '#FFFFFF' : '#000000';
 
   return (
     <>
-      {/* --- This forces the battery/time text to be dark! --- */}
-      <StatusBar barStyle="dark-content" backgroundColor="#FBFBF9" />
+      {/* --- Dynamic Status Bar --- */}
+      <StatusBar 
+        barStyle={isDark ? "light-content" : "dark-content"} 
+        backgroundColor={headerBgColor} 
+      />
       
       <Tabs
         screenOptions={{
@@ -35,14 +53,14 @@ export default function TabLayout() {
             fontWeight: 'bold',
             fontSize: 22,
             letterSpacing: 1,
-            color: '#000000',
+            color: headerTextColor, // Dynamic Header Text
           },
           headerStyle: {
-            backgroundColor: '#FBFBF9',
+            backgroundColor: headerBgColor, // Dynamic Header Background
             elevation: 2,
             shadowColor: '#000',
             shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.1,
+            shadowOpacity: isDark ? 0.3 : 0.1,
             shadowRadius: 4,
           },
           tabBarItemStyle: {
@@ -51,7 +69,7 @@ export default function TabLayout() {
             alignItems: 'center',
           },
           tabBarStyle: {
-            backgroundColor: '#FBFBF9',
+            backgroundColor: barBgColor, // Dynamic Tab Bar Background
             position: 'absolute',
             bottom: 0,
             left: 0,
@@ -65,7 +83,7 @@ export default function TabLayout() {
             elevation: 10,
             shadowColor: '#000',
             shadowOffset: { width: 0, height: -3 },
-            shadowOpacity: 0.1,
+            shadowOpacity: isDark ? 0.4 : 0.1,
             shadowRadius: 5,
             paddingHorizontal: 15, 
           },
@@ -76,7 +94,7 @@ export default function TabLayout() {
           options={{
             title: 'Home',
             tabBarIcon: ({ focused }) => (
-              <TabIcon name="view-dashboard-outline" label="HOME" focused={focused} />
+              <TabIcon name="view-dashboard-outline" label="HOME" focused={focused} isDark={isDark} />
             ),
           }}
         />
@@ -85,7 +103,7 @@ export default function TabLayout() {
           options={{
             title: 'Scan',
             tabBarIcon: ({ focused }) => (
-              <TabIcon name="link-variant" label="SCAN" focused={focused} /> 
+              <TabIcon name="link-variant" label="SCAN" focused={focused} isDark={isDark} /> 
             ),
           }}
         />
@@ -94,7 +112,7 @@ export default function TabLayout() {
           options={{
             title: 'History',
             tabBarIcon: ({ focused }) => (
-              <TabIcon name="history" label="HISTORY" focused={focused} />
+              <TabIcon name="history" label="HISTORY" focused={focused} isDark={isDark} />
             ),
           }}
         />
@@ -103,7 +121,7 @@ export default function TabLayout() {
           options={{
             title: 'Profile',
             tabBarIcon: ({ focused }) => (
-              <TabIcon name="account-outline" label="PROFILE" focused={focused} />
+              <TabIcon name="account-outline" label="PROFILE" focused={focused} isDark={isDark} />
             ),
           }}
         />
@@ -120,9 +138,6 @@ const styles = StyleSheet.create({
     minWidth: 70, 
     borderRadius: 25, 
     paddingHorizontal: 8,
-  },
-  tabItemFocused: {
-    backgroundColor: '#1E3246', 
   },
   tabLabel: {
     fontSize: 10,
