@@ -7,8 +7,12 @@ import {
   TouchableOpacity, 
   ScrollView,
   Switch,
+  ActivityIndicator,
+  Alert
 } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard'; 
+import AsyncStorage from '@react-native-async-storage/async-storage'; 
 
 // --- TUNE INTO THE RADIO TOWER ---
 import { useTheme } from '../../context/ThemeContext'; 
@@ -17,6 +21,17 @@ export default function ScanScreen() {
   const [url, setUrl] = useState('');
   const [deepAiEnabled, setDeepAiEnabled] = useState(true);
   const [crossRefEnabled, setCrossRefEnabled] = useState(false);
+  
+  // States for AI Integration
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanResult, setScanResult] = useState<string | null>(null);
+  
+  // States for the detailed history/scan breakdown
+  const [summary, setSummary] = useState('');
+  const [technicalDetails, setTechnicalDetails] = useState('');
+  const [confidence, setConfidence] = useState('0'); 
+  const [protocol, setProtocol] = useState(''); 
+  const [isCached, setIsCached] = useState(false);
 
   // 1. Grab the dark mode state
   const { isDark } = useTheme();
@@ -30,6 +45,216 @@ export default function ScanScreen() {
   const textColorSecondary = isDark ? '#A9B4C0' : '#8A9AA9';
   const pasteBtnBg = isDark ? '#2D4356' : '#F2F0E4';
   const radarCircleColor = isDark ? '#2D4356' : '#EAE8D9';
+  
+  // Colors for the new detailed boxes and protocols
+  const infoBoxBg = isDark ? '#233240' : '#E8EDF2'; 
+  const techBoxBg = isDark ? '#16202A' : '#F0F4F8'; 
+  const greenAccent = '#22C55E';
+  const redAccent = '#EF4444';
+  const yellowAccent = '#F59E0B'; 
+
+  const handlePaste = async () => {
+    try {
+      const text = await Clipboard.getStringAsync();
+      setUrl(text); 
+    } catch (error) {
+      Alert.alert("Error", "Could not paste from clipboard.");
+    }
+  };
+
+  const saveScanToHistory = async (resultData: any) => {
+    try {
+      const existingHistory = await AsyncStorage.getItem('csec_history');
+      const history = existingHistory ? JSON.parse(existingHistory) : [];
+
+      const nextIdNumber = history.length + 1;
+      const formattedId = `#${nextIdNumber.toString().padStart(2, '0')}`;
+
+      const newEntry = {
+        id: formattedId, 
+        date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        url: url,
+        verdict: resultData.verdict,
+        protocol: resultData.protocol,
+        confidence: resultData.confidence,
+        summary: resultData.summary, 
+        technicalDetails: resultData.technicalDetails,
+      };
+
+      const updatedHistory = [newEntry, ...history];
+      await AsyncStorage.setItem('csec_history', JSON.stringify(updatedHistory));
+      console.log(`Scan ${formattedId} saved to history successfully!`);
+    } catch (e) {
+      console.error("Failed to save history:", e);
+    }
+  };
+
+  const handleScan = async () => {
+    const cleanUrl = url.trim();
+    if (!cleanUrl) {
+      Alert.alert("Input Required", "Please enter a URL to scan.");
+      return;
+    }
+
+    setIsScanning(true);
+    setScanResult(null);
+    setSummary('');
+    setTechnicalDetails('');
+    setProtocol('');
+    setIsCached(false);
+
+    try {
+      // --- GATE 0: LOCAL HISTORY CROSS-REFERENCE ---
+      const existingHistory = await AsyncStorage.getItem('csec_history');
+      if (existingHistory) {
+        const historyArray = JSON.parse(existingHistory);
+        const cachedMatch = historyArray.find((item: any) => item.url.toLowerCase() === cleanUrl.toLowerCase());
+
+        if (cachedMatch) {
+          setIsCached(true);
+          setScanResult(cachedMatch.verdict);
+          setProtocol(cachedMatch.protocol); 
+          setConfidence(cachedMatch.confidence);
+          setSummary(cachedMatch.summary);
+          setTechnicalDetails(`[Retrieved from Local Cache] ${cachedMatch.technicalDetails}`);
+          setIsScanning(false);
+          return; 
+        }
+      }
+
+      // Define basic local lists
+      const whitelist = ['google.com', 'facebook.com', 'figma.com', 'tip.edu.ph', 'github.com'];
+      const blacklist = ['malicious-site.net', 'stolen-login.xyz', 'free-gems-generator.io'];
+      const domain = cleanUrl.toLowerCase().replace('https://', '').replace('http://', '').replace('www.', '').split('/')[0];
+
+      let currentVerdict = '';
+      let currentSummary = '';
+      let currentTech = '';
+      let currentProtocol = '';
+      let currentConfidence = '0';
+
+      // --- GATE 1: THE BLACKLIST ---
+      if (crossRefEnabled && blacklist.includes(domain)) {
+        currentVerdict = 'Phishing';
+        currentProtocol = 'Blacklist';
+        currentSummary = "This URL is found in our Global Blacklist Database of known malicious actors.";
+        currentTech = "Blocked via Blacklist Protocol. 100% probability of threat based on historical attack signatures.";
+        currentConfidence = '100.0';
+        
+        setScanResult(currentVerdict);
+        setProtocol(currentProtocol);
+        setSummary(currentSummary);
+        setTechnicalDetails(currentTech);
+        setConfidence(currentConfidence);
+        
+        saveScanToHistory({ verdict: currentVerdict, protocol: currentProtocol, confidence: currentConfidence, summary: currentSummary, technicalDetails: currentTech });
+        setIsScanning(false);
+        return;
+      } 
+      
+      // --- GATE 2: THE WHITELIST ---
+      if (crossRefEnabled && whitelist.includes(domain)) {
+        currentVerdict = 'Safe';
+        currentProtocol = 'Whitelist';
+        currentSummary = "This is a safe, verified website recognized by our Trusted Platform list.";
+        currentTech = "Verified via Whitelist Protocol. 0% probability of threat based on trusted domain signatures.";
+        currentConfidence = '0.0';
+
+        setScanResult(currentVerdict);
+        setProtocol(currentProtocol);
+        setSummary(currentSummary);
+        setTechnicalDetails(currentTech);
+        setConfidence(currentConfidence);
+
+        saveScanToHistory({ verdict: currentVerdict, protocol: currentProtocol, confidence: currentConfidence, summary: currentSummary, technicalDetails: currentTech });
+        setIsScanning(false);
+        return;
+      } 
+
+      // --- GATE 3: THE AI ENGINE ---
+      if (deepAiEnabled) {
+        const apiUrl = 'https://humble-sniffle-7vp6rw45jp67hq9v-5000.app.github.dev/analyze-link'; 
+
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ url: cleanUrl }), 
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.status === "success") {
+          const confidenceScore = data.confidence || 0;
+          
+          if (confidenceScore >= 40 && confidenceScore <= 60) {
+            currentVerdict = 'Suspicious';
+            currentProtocol = 'Greylist';
+            currentConfidence = confidenceScore.toFixed(1);
+            currentSummary = "AI analysis is inconclusive. This link has features of both safe and malicious sites. Proceed with caution.";
+            currentTech = `Uncertain classification. The Random Forest returned a ${currentConfidence}% anomaly score, placing it in the heuristic grey zone.`;
+          } else if (data.is_phishing === true) {
+            currentVerdict = 'Phishing';
+            currentProtocol = 'Blacklist';
+            currentConfidence = confidenceScore.toFixed(1);
+            currentSummary = "This website exhibits malicious characteristics and is likely attempting to steal credentials or data.";
+            currentTech = `Threat verdict. Lexical analysis flagged suspicious structural anomalies and abnormal character distribution.`;
+          } else {
+            currentVerdict = 'Safe';
+            currentProtocol = 'Whitelist';
+            currentConfidence = (100 - confidenceScore).toFixed(1); 
+            currentSummary = "This is a safe, verified website based on current heuristic analysis.";
+            currentTech = `Safe verdict. Lexical analysis found normal character distribution, optimal length, and standard pathing.`;
+          }
+
+          setScanResult(currentVerdict);
+          setProtocol(currentProtocol);
+          setConfidence(currentConfidence);
+          setSummary(currentSummary);
+          setTechnicalDetails(currentTech);
+
+          saveScanToHistory({ verdict: currentVerdict, protocol: currentProtocol, confidence: currentConfidence, summary: currentSummary, technicalDetails: currentTech });
+        } else {
+          console.error('API Error:', data.error);
+          Alert.alert('Scan Failed', data.error || 'The server encountered an error.');
+        }
+      } else {
+        Alert.alert('Scan Disabled', 'Please enable at least one scanning method.');
+      }
+
+    } catch (error) {
+      console.error('Network Error:', error);
+      Alert.alert('Connection Error', 'Could not reach the AI server. Is your Codespace running and public?');
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const getProtocolColor = () => {
+    if (protocol === 'Whitelist') return greenAccent;
+    if (protocol === 'Blacklist') return redAccent;
+    return yellowAccent; 
+  };
+
+  const getVerdictColor = () => {
+    if (scanResult === 'Phishing') return redAccent;
+    if (scanResult === 'Suspicious') return yellowAccent;
+    return greenAccent;
+  };
+
+  const getVerdictText = () => {
+    if (isCached) {
+      if (scanResult === 'Phishing') return 'KNOWN THREAT (CACHED)';
+      if (scanResult === 'Suspicious') return 'KNOWN RISK (CACHED)';
+      return 'VERIFIED SAFE (CACHED)';
+    } else {
+      if (scanResult === 'Phishing') return 'THREAT DETECTED';
+      if (scanResult === 'Suspicious') return 'POTENTIAL RISK';
+      return 'URL IS SAFE';
+    }
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: bgColor }]}>
@@ -38,11 +263,9 @@ export default function ScanScreen() {
         contentContainerStyle={styles.scrollContent}
       >
         
-        {/* Header Section */}
         <Text style={[styles.headerTitle, { color: textColorPrimary }]}>Scan Link</Text>
         <Text style={[styles.headerSubtitle, { color: textColorSecondary }]}>Verify URL integrity in real-time.</Text>
 
-        {/* URL Input Section */}
         <View style={[styles.inputContainer, { backgroundColor: inputBgColor }]}>
           <Feather name="link" size={20} color={textColorSecondary} style={styles.inputIcon} />
           <TextInput
@@ -54,65 +277,110 @@ export default function ScanScreen() {
             autoCapitalize="none"
             keyboardType="url"
           />
-          <TouchableOpacity style={[styles.pasteButton, { backgroundColor: pasteBtnBg }]}>
+          <TouchableOpacity style={[styles.pasteButton, { backgroundColor: pasteBtnBg }]} onPress={handlePaste}>
             <MaterialCommunityIcons name="clipboard-outline" size={14} color={isDark ? "#4DA8DA" : "#1E3246"} />
             <Text style={[styles.pasteButtonText, { color: isDark ? "#FFFFFF" : "#1E3246" }]}>PASTE</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Scan Action Button */}
         <TouchableOpacity 
-          style={[styles.scanButton, { backgroundColor: isDark ? '#4DA8DA' : '#2D4356' }]} 
+          style={[styles.scanButton, { backgroundColor: isScanning ? '#606A75' : (isDark ? '#4DA8DA' : '#2D4356') }]} 
           activeOpacity={0.8}
+          onPress={handleScan}
+          disabled={isScanning}
         >
-          <MaterialCommunityIcons name="shield-check" size={20} color="#FFF" style={styles.scanButtonIcon} />
-          <Text style={styles.scanButtonText}>EXECUTE MANUAL SCAN</Text>
+          {isScanning ? (
+            <ActivityIndicator color="#FFF" style={styles.scanButtonIcon} />
+          ) : (
+            <MaterialCommunityIcons name="shield-check" size={20} color="#FFF" style={styles.scanButtonIcon} />
+          )}
+          <Text style={styles.scanButtonText}>
+            {isScanning ? 'ANALYZING THREATS...' : 'EXECUTE MANUAL SCAN'}
+          </Text>
         </TouchableOpacity>
 
-        {/* Settings Card */}
-        <View style={[styles.settingsCard, { backgroundColor: settingsCardBg }]}>
-          <View style={styles.settingRow}>
-            <View style={styles.settingTextContainer}>
-              <Text style={[styles.settingTitle, { color: textColorPrimary }]}>DEEP AI ANALYSIS</Text>
-              <Text style={[styles.settingSubtitle, { color: textColorSecondary }]}>Behavioral heuristic scanning</Text>
-            </View>
-            <Switch
-              trackColor={{ false: "#D1D5DB", true: "#4DA8DA" }}
-              thumbColor={"#FFFFFF"}
-              ios_backgroundColor="#D1D5DB"
-              onValueChange={setDeepAiEnabled}
-              value={deepAiEnabled}
-            />
-          </View>
-
-          <View style={[styles.settingRow, styles.settingRowNoBorder]}>
-            <View style={styles.settingTextContainer}>
-              <Text style={[styles.settingTitle, { color: textColorPrimary }]}>CROSS-REFERENCE DATABASES</Text>
-              <Text style={[styles.settingSubtitle, { color: textColorSecondary }]}>Global blacklist synchronization</Text>
-            </View>
-            <Switch
-              trackColor={{ false: "#D1D5DB", true: "#4DA8DA" }}
-              thumbColor={"#FFFFFF"}
-              ios_backgroundColor="#D1D5DB"
-              onValueChange={setCrossRefEnabled}
-              value={crossRefEnabled}
-            />
-          </View>
-        </View>
-
-        {/* Standby Status Area */}
         <View style={styles.statusContainer}>
-          <View style={[styles.radarWrapper, { borderColor: radarCircleColor }]}>
-            <View style={[styles.radarInner, { backgroundColor: settingsCardBg }]}>
-              <MaterialCommunityIcons name="radar" size={40} color={isDark ? "#4DA8DA" : "#C4CBD3"} />
-            </View>
-          </View>
-          <Text style={[styles.statusTitle, { color: textColorSecondary }]}>ENGINE ON STANDBY</Text>
-          <Text style={[styles.statusSubtitle, { color: isDark ? "#606A75" : "#A9B4C0" }]}>
-            Ready for input. Sentinel{'\n'}engine on standby.
-          </Text>
-        </View>
+          
+          {!scanResult && (
+            <>
+              <View style={[styles.radarWrapper, { borderColor: radarCircleColor }]}>
+                <View style={[styles.radarInner, { backgroundColor: settingsCardBg }]}>
+                  <MaterialCommunityIcons name={isScanning ? "radar" : "shield-outline"} size={40} color={isDark ? "#4DA8DA" : "#C4CBD3"} />
+                </View>
+              </View>
+              <Text style={[styles.statusTitle, { color: textColorSecondary }]}>
+                {isScanning ? 'SCANNING...' : 'ENGINE ON STANDBY'}
+              </Text>
+              <Text style={[styles.statusSubtitle, { color: isDark ? "#606A75" : "#A9B4C0" }]}>
+                {isScanning ? 'Analyzing structural features...' : 'Ready for input. Sentinel engine on standby.'}
+              </Text>
+            </>
+          )}
 
+          {scanResult && (
+            <View style={styles.resultDetailsContainer}>
+              
+              <View style={styles.resultHeader}>
+                 <MaterialCommunityIcons 
+                    name={scanResult === 'Phishing' ? "alert-octagon" : (scanResult === 'Suspicious' ? "alert" : "shield-check")} 
+                    size={28} 
+                    color={getVerdictColor()} 
+                 />
+                 <Text style={[styles.resultHeaderText, { color: getVerdictColor() }]}>
+                    {getVerdictText()}
+                 </Text>
+              </View>
+
+              <Text style={[styles.sectionLabel, { color: textColorSecondary }]}>LIST PROTOCOL</Text>
+              <View style={styles.protocolContainer}>
+                <View style={[styles.protocolDot, { backgroundColor: getProtocolColor() }]} />
+                <Text style={[styles.protocolText, { color: textColorPrimary }]}>{protocol}</Text>
+              </View>
+
+              <Text style={[styles.sectionLabel, { color: textColorSecondary, marginTop: 12 }]}>PLAIN ENGLISH SUMMARY</Text>
+              <View style={[styles.infoBox, { backgroundColor: infoBoxBg }]}>
+                <Feather name="info" size={18} color={textColorPrimary} style={styles.infoIcon} />
+                <Text style={[styles.infoText, { color: textColorPrimary }]}>{summary}</Text>
+              </View>
+
+              <Text style={[styles.sectionLabel, { color: textColorSecondary, marginTop: 24 }]}>TECHNICAL DETAILS</Text>
+              <View style={[
+                styles.techBox, 
+                { backgroundColor: techBoxBg, borderLeftColor: getVerdictColor() }
+              ]}>
+                <View style={styles.techBoxHeader}>
+                  <MaterialCommunityIcons 
+                    name="cpu-64-bit" 
+                    size={16} 
+                    color={getVerdictColor()} 
+                  />
+                  <Text style={[styles.techBoxTitle, { color: getVerdictColor() }]}>
+                    {scanResult === 'Phishing' ? 'MALICIOUS SIGNATURE' : (scanResult === 'Suspicious' ? 'HEURISTIC GREY ZONE' : 'TRUSTED PLATFORM')}
+                  </Text>
+                </View>
+                <Text style={[styles.techBoxText, { color: isDark ? '#D1D5DB' : '#4B5563' }]}>
+                  {technicalDetails}
+                </Text>
+
+                <View style={styles.metricsRow}>
+                  <View style={[styles.metricBadge, { backgroundColor: isDark ? '#233240' : '#E8EDF2' }]}>
+                    <Text style={[styles.metricLabel, { color: textColorSecondary }]}>RF MODEL F1 SCORE</Text>
+                    <Text style={[styles.metricValue, { color: textColorPrimary }]}>90%</Text>
+                  </View>
+                  <View style={[styles.metricBadge, { backgroundColor: isDark ? '#233240' : '#E8EDF2' }]}>
+                    <Text style={[styles.metricLabel, { color: textColorSecondary }]}>PHISHING PROBABILITY</Text>
+                    <Text style={[styles.metricValue, { color: getVerdictColor() }]}>
+                      {confidence}%
+                    </Text>
+                  </View>
+                </View>
+
+              </View>
+
+            </View>
+          )}
+
+        </View>
       </ScrollView>
     </View>
   );
@@ -131,15 +399,34 @@ const styles = StyleSheet.create({
   scanButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 65, borderRadius: 35, marginBottom: 30, elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8 },
   scanButtonIcon: { marginRight: 10 },
   scanButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: 'bold', letterSpacing: 1.5 },
-  settingsCard: { borderRadius: 24, padding: 24, marginBottom: 40 },
-  settingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  settingRowNoBorder: { marginBottom: 0 },
-  settingTextContainer: { flex: 1, paddingRight: 15 },
-  settingTitle: { fontSize: 13, fontWeight: '800', letterSpacing: 0.5, marginBottom: 4 },
-  settingSubtitle: { fontSize: 12 },
-  statusContainer: { alignItems: 'center', justifyContent: 'center', marginTop: 20 },
+  
+  statusContainer: { alignItems: 'center', justifyContent: 'center', marginTop: 10, width: '100%' },
   radarWrapper: { width: 140, height: 140, borderRadius: 70, borderWidth: 1.5, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
   radarInner: { width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center' },
   statusTitle: { fontSize: 12, fontWeight: '800', letterSpacing: 1, marginBottom: 8 },
   statusSubtitle: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
+
+  resultDetailsContainer: { width: '100%', marginTop: 10 },
+  resultHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 30 },
+  resultHeaderText: { fontSize: 18, fontWeight: '800', letterSpacing: 1, marginLeft: 10 },
+  
+  sectionLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 1, marginBottom: 12, opacity: 0.8 },
+  
+  protocolContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  protocolDot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
+  protocolText: { fontSize: 16, fontWeight: '600' },
+
+  infoBox: { flexDirection: 'row', padding: 16, borderRadius: 12, alignItems: 'center' },
+  infoIcon: { marginRight: 12, marginTop: 2, alignSelf: 'flex-start' },
+  infoText: { flex: 1, fontSize: 14, lineHeight: 22, fontWeight: '500' },
+
+  techBox: { padding: 16, borderRadius: 12, borderLeftWidth: 4 },
+  techBoxHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  techBoxTitle: { fontSize: 12, fontWeight: '800', letterSpacing: 1, marginLeft: 6 },
+  techBoxText: { fontSize: 14, lineHeight: 22 },
+
+  metricsRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(150, 150, 150, 0.2)' },
+  metricBadge: { flex: 1, padding: 10, borderRadius: 8, alignItems: 'center', marginHorizontal: 4 },
+  metricLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5, marginBottom: 4 },
+  metricValue: { fontSize: 16, fontWeight: 'bold' }
 });

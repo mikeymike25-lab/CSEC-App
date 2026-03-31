@@ -11,7 +11,7 @@ def home():
     return "C-SEC Flask Server is LIVE and running!"
 
 # 1. Load the trained Random Forest model globally
-MODEL_PATH = 'csec_trained_model.pkl'
+MODEL_PATH = 'csec_rf_model.pkl'
 
 try:
     rf_model = joblib.load(MODEL_PATH)
