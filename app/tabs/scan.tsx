@@ -349,7 +349,7 @@ export default function ScanScreen() {
                 <View style={styles.metricsRow}>
                   <View style={[styles.metricBadge, { backgroundColor: isDark ? '#233240' : '#E8EDF2' }]}>
                     <Text style={[styles.metricLabel, { color: textColorSecondary }]}>RF MODEL F1 SCORE</Text>
-                    <Text style={[styles.metricValue, { color: textColorPrimary }]}>90%</Text>
+                    <Text style={[styles.metricValue, { color: textColorPrimary }]}>95%</Text>
                   </View>
                   <View style={[styles.metricBadge, { backgroundColor: isDark ? '#233240' : '#E8EDF2' }]}>
                     <Text style={[styles.metricLabel, { color: textColorSecondary }]}>PHISHING PROBABILITY</Text>

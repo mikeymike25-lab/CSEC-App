@@ -271,14 +271,6 @@
             <Feather name="chevron-right" size={20} color="#C4CBD3" style={styles.chevron} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.menuItem, { backgroundColor: cardColor }]}>
-            <View style={[styles.menuIconWrapper, { backgroundColor: iconBgColor }]}>
-              <LinkIcon color={textColorPrimary} />
-            </View>
-            <Text style={[styles.menuTitle, { color: textColorPrimary }]}>Linked Accounts</Text>
-            <Feather name="chevron-right" size={20} color="#C4CBD3" style={styles.chevron} />
-          </TouchableOpacity>
-
           {/* Logout Button */}
           <TouchableOpacity 
             style={styles.logoutItem}

@@ -196,7 +196,7 @@ export default function HistoryScreen() {
               </View>
               <View style={[styles.engineBadge, { backgroundColor: isDark ? '#2D4356' : '#3B5266' }]}>
                 <MaterialCommunityIcons name="cpu-64-bit" size={14} color="#A9B4C0" />
-                <Text style={styles.engineBadgeText}>90% F1-SCORE AI</Text>
+                <Text style={styles.engineBadgeText}>95% F1-SCORE AI</Text>
               </View>
             </View>
           </View>
@@ -295,8 +295,8 @@ export default function HistoryScreen() {
                       <View style={styles.metricsRow}>
                         <View style={[styles.metricBadge, { backgroundColor: isDark ? '#233240' : '#E8EDF2' }]}>
                           <Text style={[styles.metricLabel, { color: textColorSecondary }]}>RF MODEL F1 SCORE</Text>
-                          {/* Updated to 96% to accurately reflect the Jupyter Notebook report */}
-                          <Text style={[styles.metricValue, { color: textColorPrimary }]}>96%</Text>
+                          {/* Updated to 95% to accurately reflect the Jupyter Notebook report */}
+                          <Text style={[styles.metricValue, { color: textColorPrimary }]}>95%</Text>
                         </View>
                         <View style={[styles.metricBadge, { backgroundColor: isDark ? '#233240' : '#E8EDF2' }]}>
                           <Text style={[styles.metricLabel, { color: textColorSecondary }]}>PHISHING PROBABILITY</Text>
