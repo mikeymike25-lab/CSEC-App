@@ -1,15 +1,11 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
+import { doc, getDoc } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import { StatusBar, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-// --- FIREBASE IMPORTS ---
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../../firebaseConfig';
-
-// --- THEME TOWER ---
 import { useTheme } from '../../context/ThemeContext';
+import { auth, db } from '../../firebaseConfig';
 
 const TabIcon = ({ name, label, focused, isDark }: { name: any, label: string, focused: boolean, isDark: boolean }) => {
   const activePillColor = isDark ? '#4DA8DA' : '#1E3246';
@@ -27,7 +23,6 @@ export default function TabLayout() {
   const insets = useSafeAreaInsets(); 
   const { isDark } = useTheme();
   
-  // --- ADMIN CHECK STATE ---
   const [isAdmin, setIsAdmin] = useState(false);
   const [isCheckingRole, setIsCheckingRole] = useState(true);
 
@@ -40,7 +35,7 @@ export default function TabLayout() {
             setIsAdmin(true);
           }
         } catch (error) {
-          console.error("Error checking admin status:", error);
+          console.error(error);
         }
       }
       setIsCheckingRole(false);
@@ -52,7 +47,7 @@ export default function TabLayout() {
   const headerBgColor = isDark ? '#121A21' : '#FBFBF9';
   const headerTextColor = isDark ? '#FFFFFF' : '#000000';
 
-  if (isCheckingRole) return null; // Wait to render tabs until we know their role
+  if (isCheckingRole) return null;
 
   return (
     <>
@@ -78,12 +73,11 @@ export default function TabLayout() {
         <Tabs.Screen name="history" options={{ title: 'History', tabBarIcon: ({ focused }) => (<TabIcon name="history" label="HISTORY" focused={focused} isDark={isDark} />) }} />
         <Tabs.Screen name="profile" options={{ title: 'Profile', tabBarIcon: ({ focused }) => (<TabIcon name="account-outline" label="PROFILE" focused={focused} isDark={isDark} />) }} />
         
-        {/* --- DYNAMIC ADMIN TAB --- */}
         <Tabs.Screen 
           name="admin" 
           options={{ 
             title: 'Command', 
-            href: isAdmin ? '/tabs/admin' : null, // Hides the tab completely if not admin
+            href: (isAdmin ? '/tabs/admin' : null) as any,
             tabBarIcon: ({ focused }) => (<TabIcon name="shield-crown-outline" label="ADMIN" focused={focused} isDark={isDark} />) 
           }} 
         />
