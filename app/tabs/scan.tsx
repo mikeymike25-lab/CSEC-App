@@ -13,35 +13,28 @@ import {
   View
 } from 'react-native';
 
-// --- FIREBASE IMPORTS ---
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 
-// --- TUNE INTO THE RADIO TOWER ---
 import { useTheme } from '../../context/ThemeContext';
 
 export default function ScanScreen() {
   const [url, setUrl] = useState('');
   
-  // --- DYNAMIC SYSTEM CONFIG STATES ---
   const [dynamicAiUrl, setDynamicAiUrl] = useState('https://humble-sniffle-7vp6rw45jp67hq9v-5000.app.github.dev');
   const [strictScanningEnabled, setStrictScanningEnabled] = useState(false);
   
-  // States for AI Integration
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState<string | null>(null);
   
-  // States for the detailed history/scan breakdown
   const [summary, setSummary] = useState('');
   const [technicalDetails, setTechnicalDetails] = useState('');
   const [confidence, setConfidence] = useState('0'); 
   const [protocol, setProtocol] = useState(''); 
   const [isCached, setIsCached] = useState(false);
 
-  // 1. Grab the dark mode state
   const { isDark } = useTheme();
 
-  // 2. Define the dynamic colors
   const bgColor = isDark ? '#121A21' : '#F9F7E8';
   const cardColor = isDark ? '#1A242E' : '#FFFFFF';
   const inputBgColor = isDark ? '#1A242E' : '#FFFFFF';
@@ -56,14 +49,13 @@ export default function ScanScreen() {
   const greenAccent = '#22C55E';
   const redAccent = '#EF4444';
   const yellowAccent = '#F59E0B'; 
+  const dangerAccent = '#EF4444'; 
 
-  // --- LISTEN FOR COMMAND CENTER OVERRIDES ---
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'system', 'config'), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         if (data.aiServerUrl) {
-          // Clean up trailing slashes so the URL builds correctly
           setDynamicAiUrl(data.aiServerUrl.replace(/\/$/, ""));
         }
         if (data.strictScanning !== undefined) {
@@ -105,7 +97,7 @@ export default function ScanScreen() {
       const updatedHistory = [newEntry, ...history];
       await AsyncStorage.setItem('csec_history', JSON.stringify(updatedHistory));
     } catch (e) {
-      console.error("Failed to save history:", e);
+      console.error(e);
     }
   };
 
@@ -124,7 +116,6 @@ export default function ScanScreen() {
     setIsCached(false);
 
     try {
-      // --- GATE 0: LOCAL HISTORY CROSS-REFERENCE (SKIPPED IF STRICT MODE IS ON) ---
       if (!strictScanningEnabled) {
         const existingHistory = await AsyncStorage.getItem('csec_history');
         if (existingHistory) {
@@ -144,7 +135,6 @@ export default function ScanScreen() {
         }
       }
 
-      // Define basic local lists
       const whitelist = ['google.com', 'facebook.com', 'figma.com', 'tip.edu.ph', 'github.com'];
       const blacklist = ['malicious-site.net', 'stolen-login.xyz', 'free-gems-generator.io'];
       const domain = cleanUrl.toLowerCase().replace('https://', '').replace('http://', '').replace('www.', '').split('/')[0];
@@ -155,7 +145,6 @@ export default function ScanScreen() {
       let currentProtocol = '';
       let currentConfidence = '0';
 
-      // --- GATE 1: THE BLACKLIST ---
       if (blacklist.includes(domain)) {
         currentVerdict = 'Phishing';
         currentProtocol = 'Blacklist';
@@ -174,7 +163,6 @@ export default function ScanScreen() {
         return;
       } 
       
-      // --- GATE 2: THE WHITELIST ---
       if (whitelist.includes(domain)) {
         currentVerdict = 'Safe';
         currentProtocol = 'Whitelist';
@@ -193,8 +181,6 @@ export default function ScanScreen() {
         return;
       } 
 
-      // --- GATE 3: THE AI ENGINE (NOW DYNAMIC!) ---
-      // We inject the dynamic URL from Firebase right here:
       const apiUrl = `${dynamicAiUrl}/analyze-link`; 
 
       const response = await fetch(apiUrl, {
@@ -216,19 +202,19 @@ export default function ScanScreen() {
           currentProtocol = 'Greylist';
           currentConfidence = confidenceScore.toFixed(1);
           currentSummary = "AI analysis is inconclusive. This link has features of both safe and malicious sites. Proceed with caution.";
-          currentTech = `Uncertain classification. The Random Forest returned a ${currentConfidence}% anomaly score, placing it in the heuristic grey zone.`;
+          currentTech = `Uncertain classification. The Random Forest returned a ${currentConfidence}% anomaly score.`;
         } else if (data.is_phishing === true) {
           currentVerdict = 'Phishing';
           currentProtocol = 'Blacklist';
           currentConfidence = confidenceScore.toFixed(1);
           currentSummary = "This website exhibits malicious characteristics and is likely attempting to steal credentials or data.";
-          currentTech = `Threat verdict. Lexical analysis flagged suspicious structural anomalies and abnormal character distribution.`;
+          currentTech = `Threat verdict. Lexical analysis flagged structural anomalies and abnormal character distribution.`;
         } else {
           currentVerdict = 'Safe';
           currentProtocol = 'Whitelist';
           currentConfidence = (100 - confidenceScore).toFixed(1); 
           currentSummary = "This is a safe, verified website based on current heuristic analysis.";
-          currentTech = `Safe verdict. Lexical analysis found normal character distribution, optimal length, and standard pathing.`;
+          currentTech = `Safe verdict. Lexical analysis found normal character distribution and standard pathing.`;
         }
 
         setScanResult(currentVerdict);
@@ -239,13 +225,11 @@ export default function ScanScreen() {
 
         saveScanToHistory({ verdict: currentVerdict, protocol: currentProtocol, confidence: currentConfidence, summary: currentSummary, technicalDetails: currentTech });
       } else {
-        console.error('API Error:', data.error);
         Alert.alert('Scan Failed', data.error || 'The server encountered an error.');
       }
 
     } catch (error) {
-      console.error('Network Error:', error);
-      Alert.alert('Connection Error', `Could not reach the AI server at ${dynamicAiUrl}. Make sure your Neural Engine Routing is correct in the Admin Panel.`);
+      Alert.alert('Connection Error', `Could not reach the AI server at ${dynamicAiUrl}.`);
     } finally {
       setIsScanning(false);
     }
@@ -301,7 +285,6 @@ export default function ScanScreen() {
 
         <TouchableOpacity 
           style={[styles.scanButton, { backgroundColor: isScanning ? '#606A75' : (isDark ? '#4DA8DA' : '#2D4356') }]} 
-          activeOpacity={0.8}
           onPress={handleScan}
           disabled={isScanning}
         >
@@ -332,9 +315,6 @@ export default function ScanScreen() {
               <Text style={[styles.statusTitle, { color: textColorSecondary }]}>
                 {isScanning ? 'SCANNING...' : 'ENGINE ON STANDBY'}
               </Text>
-              <Text style={[styles.statusSubtitle, { color: isDark ? "#606A75" : "#A9B4C0" }]}>
-                {isScanning ? 'Analyzing structural features...' : 'Ready for input. Sentinel engine on standby.'}
-              </Text>
             </>
           )}
 
@@ -359,26 +339,14 @@ export default function ScanScreen() {
 
               <Text style={[styles.sectionLabel, { color: textColorSecondary, marginTop: 24 }]}>TECHNICAL DETAILS</Text>
               <View style={[styles.techBox, { backgroundColor: techBoxBg, borderLeftColor: getVerdictColor() }]}>
-                <View style={styles.techBoxHeader}>
-                  <MaterialCommunityIcons name="cpu-64-bit" size={16} color={getVerdictColor()} />
-                  <Text style={[styles.techBoxTitle, { color: getVerdictColor() }]}>
-                    {scanResult === 'Phishing' ? 'MALICIOUS SIGNATURE' : (scanResult === 'Suspicious' ? 'HEURISTIC GREY ZONE' : 'TRUSTED PLATFORM')}
-                  </Text>
-                </View>
                 <Text style={[styles.techBoxText, { color: isDark ? '#D1D5DB' : '#4B5563' }]}>{technicalDetails}</Text>
-
                 <View style={styles.metricsRow}>
-                  <View style={[styles.metricBadge, { backgroundColor: isDark ? '#233240' : '#E8EDF2' }]}>
-                    <Text style={[styles.metricLabel, { color: textColorSecondary }]}>RF MODEL F1 SCORE</Text>
-                    <Text style={[styles.metricValue, { color: textColorPrimary }]}>90%</Text>
-                  </View>
                   <View style={[styles.metricBadge, { backgroundColor: isDark ? '#233240' : '#E8EDF2' }]}>
                     <Text style={[styles.metricLabel, { color: textColorSecondary }]}>PHISHING PROBABILITY</Text>
                     <Text style={[styles.metricValue, { color: getVerdictColor() }]}>{confidence}%</Text>
                   </View>
                 </View>
               </View>
-
             </View>
           )}
         </View>
@@ -400,31 +368,22 @@ const styles = StyleSheet.create({
   scanButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 65, borderRadius: 35, marginBottom: 15, elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8 },
   scanButtonIcon: { marginRight: 10 },
   scanButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: 'bold', letterSpacing: 1.5 },
-  
   statusContainer: { alignItems: 'center', justifyContent: 'center', marginTop: 10, width: '100%' },
   radarWrapper: { width: 140, height: 140, borderRadius: 70, borderWidth: 1.5, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
   radarInner: { width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center' },
   statusTitle: { fontSize: 12, fontWeight: '800', letterSpacing: 1, marginBottom: 8 },
-  statusSubtitle: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
-
   resultDetailsContainer: { width: '100%', marginTop: 10 },
   resultHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 30 },
   resultHeaderText: { fontSize: 18, fontWeight: '800', letterSpacing: 1, marginLeft: 10 },
-  
   sectionLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 1, marginBottom: 12, opacity: 0.8 },
   protocolContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   protocolDot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
   protocolText: { fontSize: 16, fontWeight: '600' },
-
   infoBox: { flexDirection: 'row', padding: 16, borderRadius: 12, alignItems: 'center' },
   infoIcon: { marginRight: 12, marginTop: 2, alignSelf: 'flex-start' },
   infoText: { flex: 1, fontSize: 14, lineHeight: 22, fontWeight: '500' },
-
   techBox: { padding: 16, borderRadius: 12, borderLeftWidth: 4 },
-  techBoxHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  techBoxTitle: { fontSize: 12, fontWeight: '800', letterSpacing: 1, marginLeft: 6 },
   techBoxText: { fontSize: 14, lineHeight: 22 },
-
   metricsRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(150, 150, 150, 0.2)' },
   metricBadge: { flex: 1, padding: 10, borderRadius: 8, alignItems: 'center', marginHorizontal: 4 },
   metricLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5, marginBottom: 4 },

@@ -1,7 +1,7 @@
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, Modal, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 // --- FIREBASE IMPORTS ---
 import { collection, doc, getDoc, getDocs, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
@@ -9,6 +9,8 @@ import { auth, db } from '../../firebaseConfig';
 
 // --- THEME CONTEXT ---
 import { useTheme } from '../../context/ThemeContext';
+
+const { width } = Dimensions.get('window');
 
 interface UserData { uid: string; name: string; email: string; role: string; accountStatus: string; tier: string; }
 
@@ -34,6 +36,9 @@ export default function AdminScreen() {
     `[${new Date().toLocaleTimeString('en-US', { hour12: false })}] SYSTEM: Secure connection established.`,
     `[${new Date().toLocaleTimeString('en-US', { hour12: false })}] SYSTEM: Awaiting command directives.`
   ]);
+
+  // --- INTELLIGENCE STATS STATE ---
+  const [globalStats, setGlobalStats] = useState({ dailyScans: 0, totalWarnings: 0 });
 
   // --- PERSONNEL MANAGEMENT STATE ---
   const [isDirectoryVisible, setIsDirectoryVisible] = useState(false);
@@ -67,6 +72,7 @@ export default function AdminScreen() {
       }
       setIsAuthorized(true);
       setIsLoading(false);
+      fetchUsers(); 
     };
 
     verifyAdmin();
@@ -81,10 +87,15 @@ export default function AdminScreen() {
       }
     });
 
-    return () => unsub();
+    const unsubStats = onSnapshot(doc(db, 'system', 'stats'), (docSnap) => {
+        if (docSnap.exists()) {
+          setGlobalStats(docSnap.data() as any);
+        }
+    });
+
+    return () => { unsub(); unsubStats(); };
   }, []);
 
-  // --- HELPER: ADD LOG ---
   const logAction = (message: string) => {
     const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
     setAuditLogs(prev => [`[${timestamp}] ${adminId}: ${message}`, ...prev].slice(0, 30));
@@ -99,7 +110,6 @@ export default function AdminScreen() {
     }
   };
 
-  // --- ACTIONS ---
   const handleSaveNeuralEngine = () => {
     updateGlobalConfig('aiServerUrl', aiServerUrl);
     Alert.alert("Neural Engine Rerouted", "All agents will now route scans to the new server.");
@@ -116,13 +126,11 @@ export default function AdminScreen() {
 
   const handleThreatIntel = (type: 'whitelist' | 'blacklist') => {
     if (!threatUrl.trim()) return;
-    // In a full production app, you would arrayUnion this to a Firestore document
     Alert.alert("Matrix Updated", `${threatUrl} has been added to the global ${type}.`);
     logAction(`Added ${threatUrl} to Global ${type.toUpperCase()}`);
     setThreatUrl('');
   };
 
-  // --- PERSONNEL MANAGEMENT FETCH ---
   const fetchUsers = async () => {
     setIsLoadingUsers(true);
     try {
@@ -131,8 +139,12 @@ export default function AdminScreen() {
       querySnapshot.forEach((doc) => {
         const data = doc.data();
         usersList.push({
-          uid: data.uid, name: data.name || 'Unknown', email: data.email || 'No Email',
-          role: data.role || 'user', accountStatus: data.accountStatus || 'active', tier: data.tier || 'Tier 1'
+          uid: data.uid || doc.id, 
+          name: data.name || 'Unknown Agent', 
+          email: data.email || 'No Email Found',
+          role: data.role || 'user', 
+          accountStatus: data.accountStatus || 'active', 
+          tier: data.tier || 'Tier 1'
         });
       });
       setUsers(usersList);
@@ -154,8 +166,16 @@ export default function AdminScreen() {
     }
   };
 
-  const filteredUsers = users.filter(u => u.name.toLowerCase().includes(searchQuery.toLowerCase()) || u.email.toLowerCase().includes(searchQuery.toLowerCase()));
-  const getStatusColor = (status: string) => { if (status === 'suspended') return warningAccent; if (status === 'banned') return dangerAccent; return successAccent; };
+  const filteredUsers = users.filter(u => 
+    (u.name || "").toLowerCase().includes(searchQuery.toLowerCase()) || 
+    (u.email || "").toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const getStatusColor = (status: string) => { 
+    if (status === 'suspended') return warningAccent; 
+    if (status === 'banned') return dangerAccent; 
+    return successAccent; 
+  };
 
   if (isLoading || !isAuthorized) {
     return <View style={[styles.container, { backgroundColor: bgColor, justifyContent: 'center', alignItems: 'center' }]}><ActivityIndicator size="large" color="#4DA8DA" /></View>;
@@ -170,7 +190,7 @@ export default function AdminScreen() {
           <Text style={[styles.headerSubtitle, { color: textColorSecondary }]}>Authorized Personnel Only. ID: {adminId}</Text>
         </View>
 
-        {/* --- 1. SYSTEM AUDIT LOG (NEW) --- */}
+        {/* 1. SYSTEM AUDIT LOG */}
         <View style={[styles.terminalCard, { backgroundColor: terminalBg }]}>
           <View style={styles.terminalHeader}>
             <MaterialCommunityIcons name="console-network" size={16} color={terminalText} />
@@ -183,7 +203,7 @@ export default function AdminScreen() {
           </ScrollView>
         </View>
 
-        {/* --- 2. THREAT INTELLIGENCE OVERRIDE (NEW) --- */}
+        {/* 2. THREAT INTELLIGENCE MATRIX */}
         <View style={[styles.card, { backgroundColor: cardColor }]}>
           <View style={styles.cardHeader}>
             <MaterialCommunityIcons name="shield-half-full" size={20} color={primaryAccent} />
@@ -211,7 +231,7 @@ export default function AdminScreen() {
           </View>
         </View>
 
-        {/* --- 3. NEURAL ENGINE ROUTING (NEW) --- */}
+        {/* 3. NEURAL ENGINE ROUTING */}
         <View style={[styles.card, { backgroundColor: cardColor }]}>
           <View style={styles.cardHeader}>
             <MaterialCommunityIcons name="brain" size={20} color={primaryAccent} />
@@ -231,7 +251,7 @@ export default function AdminScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* --- 4. GLOBAL BROADCAST (NEW) --- */}
+        {/* 4. GLOBAL BROADCAST */}
         <View style={[styles.card, { backgroundColor: cardColor }]}>
           <View style={styles.cardHeader}>
             <Ionicons name="megaphone" size={20} color={warningAccent} />
@@ -251,7 +271,7 @@ export default function AdminScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* --- EXISTING: PERSONNEL MANAGEMENT --- */}
+        {/* 5. PERSONNEL MANAGEMENT */}
         <View style={[styles.card, { backgroundColor: cardColor }]}>
           <View style={styles.cardHeader}>
             <Feather name="users" size={20} color={primaryAccent} />
@@ -263,7 +283,7 @@ export default function AdminScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* --- EXISTING: GLOBAL DIRECTIVES --- */}
+        {/* 6. GLOBAL DIRECTIVES */}
         <View style={[styles.card, { backgroundColor: cardColor }]}>
           <View style={styles.cardHeader}>
             <Feather name="sliders" size={20} color={primaryAccent} />
@@ -277,6 +297,36 @@ export default function AdminScreen() {
           <View style={styles.toggleRow}>
             <View style={styles.toggleTextContainer}><Text style={[styles.toggleTitle, { color: textColorPrimary }]}>Open Registration</Text><Text style={[styles.toggleSubtitle, { color: textColorSecondary }]}>Allow new users to join.</Text></View>
             <Switch trackColor={{ false: isDark ? "#2D4356" : "#D1D5DB", true: "#4DA8DA" }} thumbColor={"#FFFFFF"} value={allowNewSignups} onValueChange={(val) => updateGlobalConfig('allowNewSignups', val)} />
+          </View>
+        </View>
+
+        {/* 7. INTELLIGENCE OVERVIEW */}
+        <View style={[styles.card, { backgroundColor: cardColor }]}>
+          <View style={styles.cardHeader}>
+            <MaterialCommunityIcons name="chart-box-outline" size={20} color={primaryAccent} />
+            <Text style={[styles.cardTitle, { color: textColorPrimary }]}>Intelligence Overview</Text>
+          </View>
+          
+          <View style={styles.statsGrid}>
+            <View style={[styles.statBox, { backgroundColor: inputBgColor }]}>
+              <Text style={[styles.statLabel, { color: textColorSecondary }]}>TOTAL ACCOUNTS</Text>
+              <Text style={[styles.statValue, { color: textColorPrimary }]}>{users.length}</Text>
+            </View>
+            <View style={[styles.statBox, { backgroundColor: inputBgColor }]}>
+              <Text style={[styles.statLabel, { color: textColorSecondary }]}>ACTIVE AGENTS</Text>
+              <Text style={[styles.statValue, { color: successAccent }]}>{users.filter(u => u.role === 'admin' || u.role === 'agent').length}</Text>
+            </View>
+          </View>
+
+          <View style={styles.statsGrid}>
+            <View style={[styles.statBox, { backgroundColor: inputBgColor }]}>
+              <Text style={[styles.statLabel, { color: textColorSecondary }]}>DAILY USE</Text>
+              <Text style={[styles.statValue, { color: textColorPrimary }]}>{globalStats.dailyScans || 0}</Text>
+            </View>
+            <View style={[styles.statBox, { backgroundColor: inputBgColor }]}>
+              <Text style={[styles.statLabel, { color: textColorSecondary }]}>WARNINGS</Text>
+              <Text style={[styles.statValue, { color: dangerAccent }]}>{globalStats.totalWarnings || 0}</Text>
+            </View>
           </View>
         </View>
 
@@ -309,20 +359,25 @@ export default function AdminScreen() {
               {filteredUsers.map((user) => (
                 <View key={user.uid} style={[styles.userCard, { backgroundColor: cardColor }]}>
                   <View style={styles.userInfoRow}>
+                    {/* AVATAR FIX */}
                     <View style={[styles.userAvatar, { backgroundColor: isDark ? '#2D4356' : '#EAE8D9' }]}>
-                      <Text style={[styles.userAvatarText, { color: textColorPrimary }]}>{user.name.charAt(0).toUpperCase()}</Text>
+                      <Text style={[styles.userAvatarText, { color: textColorPrimary }]}>{(user.name?.charAt(0) || "?").toUpperCase()}</Text>
                     </View>
                     <View style={styles.userDetails}>
-                      <Text style={[styles.userName, { color: textColorPrimary }]}>{user.name}</Text>
-                      <Text style={[styles.userEmail, { color: textColorSecondary }]}>{user.email}</Text>
-                      <Text style={[styles.userRole, { color: textColorSecondary }]}>ID: CS-{user.uid.substring(0, 4).toUpperCase()} • {user.role.toUpperCase()}</Text>
+                      <Text style={[styles.userName, { color: textColorPrimary }]}>{user.name || "Unknown Agent"}</Text>
+                      <Text style={[styles.userEmail, { color: textColorSecondary }]}>{user.email || "No Email Found"}</Text>
+                      
+                      {/* SUBSTRING FIX: Using Optional Chaining and Fallbacks */}
+                      <Text style={[styles.userRole, { color: textColorSecondary }]}>
+                        ID: CS-{(user.uid?.substring(0, 4) || "####").toUpperCase()} • {(user.role || "USER").toUpperCase()}
+                      </Text>
                     </View>
                   </View>
                   <View style={[styles.divider, { backgroundColor: isDark ? '#2D4356' : '#F2F0E4', marginVertical: 15 }]} />
                   <View style={styles.actionRow}>
                     <View style={[styles.statusPill, { backgroundColor: getStatusColor(user.accountStatus) + '20' }]}>
                       <View style={[styles.statusDot, { backgroundColor: getStatusColor(user.accountStatus) }]} />
-                      <Text style={[styles.statusText, { color: getStatusColor(user.accountStatus) }]}>{user.accountStatus.toUpperCase()}</Text>
+                      <Text style={[styles.statusText, { color: getStatusColor(user.accountStatus) }]}>{(user.accountStatus || "ACTIVE").toUpperCase()}</Text>
                     </View>
                     <TouchableOpacity style={[styles.editBtn, { backgroundColor: isDark ? '#2D4356' : '#F2F0E4' }]} onPress={() => setSelectedUser(selectedUser?.uid === user.uid ? null : user)}>
                       <Feather name="edit-2" size={14} color={textColorPrimary} />
@@ -355,33 +410,29 @@ const styles = StyleSheet.create({
   headerSection: { marginBottom: 30 },
   headerTitle: { fontSize: 36, fontWeight: '800', letterSpacing: -0.5, marginBottom: 8 },
   headerSubtitle: { fontSize: 16, lineHeight: 24 },
-  
   card: { borderRadius: 24, padding: 24, marginBottom: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 4 },
   cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
   cardTitle: { fontSize: 18, fontWeight: 'bold', marginLeft: 10, letterSpacing: 0.5 },
-  
   terminalCard: { borderRadius: 16, padding: 20, marginBottom: 24, borderWidth: 1, borderColor: '#2D4356' },
   terminalHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 15, borderBottomWidth: 1, borderBottomColor: '#2D4356', paddingBottom: 10 },
   terminalTitle: { fontSize: 12, fontWeight: '800', letterSpacing: 2, marginLeft: 8 },
   terminalBody: { maxHeight: 120 },
   terminalLine: { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 11, marginBottom: 6, lineHeight: 16 },
-
   inputBox: { height: 55, borderRadius: 16, paddingHorizontal: 20, fontSize: 15, fontWeight: '500' },
-  
   actionRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 15 },
   halfButton: { flex: 0.48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, borderRadius: 16, borderWidth: 1 },
   halfButtonText: { fontSize: 13, fontWeight: 'bold', marginLeft: 8 },
-  
   primaryButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 18, borderRadius: 16 },
   primaryButtonText: { color: '#FFF', fontSize: 15, fontWeight: 'bold', marginLeft: 10, letterSpacing: 0.5 },
-  
   toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 },
   toggleTextContainer: { flex: 1, paddingRight: 20 },
   toggleTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 4 },
   toggleSubtitle: { fontSize: 12, lineHeight: 18 },
   divider: { height: 1, marginVertical: 10 },
-  
-  // Modal Styles
+  statsGrid: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
+  statBox: { flex: 0.48, borderRadius: 16, padding: 18, alignItems: 'center', justifyContent: 'center' },
+  statLabel: { fontSize: 9, fontWeight: '900', letterSpacing: 1, marginBottom: 5 },
+  statValue: { fontSize: 24, fontWeight: 'bold' },
   modalContainer: { flex: 1 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingTop: 50, borderBottomWidth: 1, borderBottomColor: 'rgba(150,150,150,0.1)' },
   modalTitle: { fontSize: 24, fontWeight: '800' },

@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { Feather, MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useTheme } from '../context/ThemeContext'; 
+import { useTheme } from '../../context/ThemeContext'; 
 
 export default function SecurityScreen() {
   const router = useRouter();
