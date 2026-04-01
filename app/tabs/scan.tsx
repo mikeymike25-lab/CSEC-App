@@ -6,7 +6,6 @@ import {
   TextInput, 
   TouchableOpacity, 
   ScrollView,
-  Switch,
   ActivityIndicator,
   Alert
 } from 'react-native';
@@ -14,13 +13,11 @@ import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard'; 
 import AsyncStorage from '@react-native-async-storage/async-storage'; 
 
-// --- TUNE INTO THE RADIO TOWER ---
 import { useTheme } from '../../context/ThemeContext'; 
 
 export default function ScanScreen() {
   const [url, setUrl] = useState('');
   const [deepAiEnabled, setDeepAiEnabled] = useState(true);
-  const [crossRefEnabled, setCrossRefEnabled] = useState(false);
   
   // States for AI Integration
   const [isScanning, setIsScanning] = useState(false);
@@ -104,7 +101,7 @@ export default function ScanScreen() {
     setIsCached(false);
 
     try {
-      // --- GATE 0: LOCAL HISTORY CROSS-REFERENCE ---
+      // --- GATE 0: LOCAL HISTORY CROSS-REFERENCE (CACHE) ---
       const existingHistory = await AsyncStorage.getItem('csec_history');
       if (existingHistory) {
         const historyArray = JSON.parse(existingHistory);
@@ -122,58 +119,9 @@ export default function ScanScreen() {
         }
       }
 
-      // Define basic local lists
-      const whitelist = ['google.com', 'facebook.com', 'figma.com', 'tip.edu.ph', 'github.com'];
-      const blacklist = ['malicious-site.net', 'stolen-login.xyz', 'free-gems-generator.io'];
-      const domain = cleanUrl.toLowerCase().replace('https://', '').replace('http://', '').replace('www.', '').split('/')[0];
-
-      let currentVerdict = '';
-      let currentSummary = '';
-      let currentTech = '';
-      let currentProtocol = '';
-      let currentConfidence = '0';
-
-      // --- GATE 1: THE BLACKLIST ---
-      if (crossRefEnabled && blacklist.includes(domain)) {
-        currentVerdict = 'Phishing';
-        currentProtocol = 'Blacklist';
-        currentSummary = "This URL is found in our Global Blacklist Database of known malicious actors.";
-        currentTech = "Blocked via Blacklist Protocol. 100% probability of threat based on historical attack signatures.";
-        currentConfidence = '100.0';
-        
-        setScanResult(currentVerdict);
-        setProtocol(currentProtocol);
-        setSummary(currentSummary);
-        setTechnicalDetails(currentTech);
-        setConfidence(currentConfidence);
-        
-        saveScanToHistory({ verdict: currentVerdict, protocol: currentProtocol, confidence: currentConfidence, summary: currentSummary, technicalDetails: currentTech });
-        setIsScanning(false);
-        return;
-      } 
-      
-      // --- GATE 2: THE WHITELIST ---
-      if (crossRefEnabled && whitelist.includes(domain)) {
-        currentVerdict = 'Safe';
-        currentProtocol = 'Whitelist';
-        currentSummary = "This is a safe, verified website recognized by our Trusted Platform list.";
-        currentTech = "Verified via Whitelist Protocol. 0% probability of threat based on trusted domain signatures.";
-        currentConfidence = '0.0';
-
-        setScanResult(currentVerdict);
-        setProtocol(currentProtocol);
-        setSummary(currentSummary);
-        setTechnicalDetails(currentTech);
-        setConfidence(currentConfidence);
-
-        saveScanToHistory({ verdict: currentVerdict, protocol: currentProtocol, confidence: currentConfidence, summary: currentSummary, technicalDetails: currentTech });
-        setIsScanning(false);
-        return;
-      } 
-
-      // --- GATE 3: THE AI ENGINE ---
+      // --- GATE 1, 2 & 3: SERVER ARCHITECTURE ---
       if (deepAiEnabled) {
-        const apiUrl = 'https://humble-sniffle-7vp6rw45jp67hq9v-5000.app.github.dev/analyze-link'; 
+        const apiUrl = 'https://scaling-fortnight-pjwxgqgjxjxrcr466-5000.app.github.dev/analyze-link'; 
 
         const response = await fetch(apiUrl, {
           method: 'POST',
@@ -187,26 +135,55 @@ export default function ScanScreen() {
         const data = await response.json();
 
         if (response.ok && data.status === "success") {
-          const confidenceScore = data.confidence || 0;
+          let currentVerdict = data.verdict; 
+          let serverProtocol = data.protocol;
           
-          if (confidenceScore >= 40 && confidenceScore <= 60) {
-            currentVerdict = 'Suspicious';
-            currentProtocol = 'Greylist';
-            currentConfidence = confidenceScore.toFixed(1);
-            currentSummary = "AI analysis is inconclusive. This link has features of both safe and malicious sites. Proceed with caution.";
-            currentTech = `Uncertain classification. The Random Forest returned a ${currentConfidence}% anomaly score, placing it in the heuristic grey zone.`;
-          } else if (data.is_phishing === true) {
-            currentVerdict = 'Phishing';
-            currentProtocol = 'Blacklist';
-            currentConfidence = confidenceScore.toFixed(1);
-            currentSummary = "This website exhibits malicious characteristics and is likely attempting to steal credentials or data.";
-            currentTech = `Threat verdict. Lexical analysis flagged suspicious structural anomalies and abnormal character distribution.`;
+          // --- CALCULATE TRUE PHISHING PROBABILITY (0% = Safe, 100% = Phishing) ---
+          let rawConfidence = data.confidence || 0;
+          let phishingProb = 0;
+
+          if (serverProtocol.includes('Blacklist')) {
+            phishingProb = 100;
+          } else if (serverProtocol.includes('Whitelist')) {
+            phishingProb = 0;
+          } else if (data.is_phishing === false || currentVerdict === 'Safe') {
+            phishingProb = 100 - rawConfidence;
           } else {
-            currentVerdict = 'Safe';
-            currentProtocol = 'Whitelist';
-            currentConfidence = (100 - confidenceScore).toFixed(1); 
-            currentSummary = "This is a safe, verified website based on current heuristic analysis.";
-            currentTech = `Safe verdict. Lexical analysis found normal character distribution, optimal length, and standard pathing.`;
+            phishingProb = rawConfidence;
+          }
+
+          let currentConfidence = phishingProb.toFixed(1);
+          let currentSummary = '';
+          let currentTech = '';
+          let currentProtocol = serverProtocol;
+
+          // --- FIX: STRICT 40-60 GREYLIST LOGIC ---
+          if (serverProtocol.includes('AI')) {
+            if (phishingProb >= 40 && phishingProb <= 60) {
+              // 40% to 60%: The true Greylist
+              currentVerdict = 'Suspicious';
+              currentProtocol = 'Heuristic Greylist';
+              currentSummary = "AI analysis is inconclusive. This link has features of both safe and malicious sites. Proceed with caution.";
+              currentTech = `Uncertain classification. The Random Forest returned a ${currentConfidence}% anomaly score, placing it in the heuristic grey zone.`;
+            } else if (currentVerdict === 'Phishing') {
+              // 61% to 100%: Confident Phishing
+              currentProtocol = 'AI RF Analysis'; 
+              currentSummary = "This website exhibits malicious characteristics and is likely attempting to steal credentials or data.";
+              currentTech = "Threat verdict. Lexical analysis flagged suspicious structural anomalies and abnormal character distribution.";
+            } else {
+              // 0% to 39%: Confident Safe
+              currentProtocol = 'AI RF Analysis'; 
+              currentSummary = "This is a safe, verified website based on current heuristic analysis.";
+              currentTech = "Safe verdict. Lexical analysis found normal character distribution, optimal length, and standard pathing.";
+            }
+          } 
+          else if (serverProtocol.includes('Blacklist')) {
+            currentSummary = "This URL is found in our Global Blacklist Database of known malicious actors.";
+            currentTech = "Blocked via Blacklist Protocol. 100% probability of threat based on historical attack signatures.";
+          } 
+          else if (serverProtocol.includes('Whitelist')) {
+            currentSummary = "This is a safe, verified website recognized by our Trusted Platform list.";
+            currentTech = "Verified via Whitelist Protocol. 0% probability of threat based on trusted domain signatures.";
           }
 
           setScanResult(currentVerdict);
@@ -215,13 +192,20 @@ export default function ScanScreen() {
           setSummary(currentSummary);
           setTechnicalDetails(currentTech);
 
-          saveScanToHistory({ verdict: currentVerdict, protocol: currentProtocol, confidence: currentConfidence, summary: currentSummary, technicalDetails: currentTech });
+          saveScanToHistory({ 
+            verdict: currentVerdict, 
+            protocol: currentProtocol, 
+            confidence: currentConfidence, 
+            summary: currentSummary, 
+            technicalDetails: currentTech 
+          });
+
         } else {
           console.error('API Error:', data.error);
           Alert.alert('Scan Failed', data.error || 'The server encountered an error.');
         }
       } else {
-        Alert.alert('Scan Disabled', 'Please enable at least one scanning method.');
+        Alert.alert('Scan Disabled', 'Please enable Deep AI Scanning.');
       }
 
     } catch (error) {
@@ -233,9 +217,9 @@ export default function ScanScreen() {
   };
 
   const getProtocolColor = () => {
-    if (protocol === 'Whitelist') return greenAccent;
-    if (protocol === 'Blacklist') return redAccent;
-    return yellowAccent; 
+    if (protocol.includes('Whitelist') || (protocol === 'AI RF Analysis' && scanResult === 'Safe')) return greenAccent;
+    if (protocol.includes('Blacklist') || (protocol === 'AI RF Analysis' && scanResult === 'Phishing')) return redAccent;
+    return yellowAccent; // This handles "Heuristic Greylist"
   };
 
   const getVerdictColor = () => {

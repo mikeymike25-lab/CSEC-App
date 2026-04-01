@@ -6,16 +6,18 @@ from urllib.parse import urlparse
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
+
 @app.route('/', methods=['GET'])
 def home():
     return "C-SEC Flask Server is LIVE and running!"
 
-# 1. Load the trained Random Forest model globally
+# ---------------------------------------------------------
+# 1. LOAD AI MODEL (GATE 3)
+# ---------------------------------------------------------
 MODEL_PATH = 'csec_rf_model.pkl'
 
 try:
     rf_model = joblib.load(MODEL_PATH)
-    # Extract the exact 111 column names the model expects so the extraction function can use them
     expected_features = list(rf_model.feature_names_in_)
     print("AI Model loaded successfully. Ready to intercept.")
 except Exception as e:
@@ -23,8 +25,35 @@ except Exception as e:
     rf_model = None
     expected_features = []
 
+# ---------------------------------------------------------
+# 1.5 LOAD SECURITY LISTS (GATES 1 & 2)
+# ---------------------------------------------------------
+# We use try/except so the server won't crash if the CSVs are missing.
+# It will just skip the lists and rely entirely on the AI.
 
-# 2. Feature Extraction Logic (Directly from your Jupyter Notebook)
+# Load Blacklist
+try:
+    blacklist_df = pd.read_csv('online-valid.csv', header=None, names=['url'], low_memory=False)
+    # Convert to a set for lightning-fast lookups
+    blacklist_urls = set(blacklist_df['url'].astype(str).str.lower())
+    print(f"Gate 1 Active: Loaded {len(blacklist_urls)} Blacklisted URLs.")
+except Exception:
+    print("No blacklist.csv found. Gate 1 (Blacklist) is disabled.")
+    blacklist_urls = set()
+
+# Load Whitelist
+try:
+    whitelist_df = pd.read_csv('tranco_JLQJY.csv', header=None, names=['domain'], low_memory=False)
+    whitelist_domains = set(whitelist_df['domain'].astype(str).str.lower())
+    print(f"Gate 2 Active: Loaded {len(whitelist_domains)} Whitelisted Domains.")
+except Exception:
+    print("No whitelist.csv found. Gate 2 (Whitelist) is disabled.")
+    whitelist_domains = set()
+
+
+# ---------------------------------------------------------
+# 2. FEATURE EXTRACTION (For the AI)
+# ---------------------------------------------------------
 def get_counts(text, is_missing=False):
     """If the URL part is missing, return -1 for all counts to match the CSV"""
     if is_missing:
@@ -40,17 +69,14 @@ def get_counts(text, is_missing=False):
     }
 
 def extract_111_features(url):
-    # Standardize URL
     if not url.startswith(('http://', 'https://')):
         url = 'http://' + url
     
     parsed = urlparse(url)
-    
     domain = parsed.netloc
     path = parsed.path
     params = parsed.query
     
-    # Determine what is missing (to apply the -1 rule)
     has_directory = '/' in path and len(path) > 1
     has_file = '.' in os.path.basename(path)
     has_params = len(params) > 0
@@ -58,7 +84,6 @@ def extract_111_features(url):
     directory = os.path.dirname(path) if has_directory else ""
     file = os.path.basename(path) if has_file else ""
     
-    # Extract counts (Passing True if missing to get -1s)
     u_counts = get_counts(url)
     d_counts = get_counts(domain)
     dir_counts = get_counts(directory, not has_directory)
@@ -67,7 +92,6 @@ def extract_111_features(url):
     
     features = {}
     
-    # Map counts to column names
     for char in u_counts:
         features[f'qty_{char}_url'] = u_counts[char]
         features[f'qty_{char}_domain'] = d_counts[char]
@@ -75,7 +99,6 @@ def extract_111_features(url):
         features[f'qty_{char}_file'] = f_counts[char]
         features[f'qty_{char}_params'] = p_counts[char]
         
-    # Add Lengths (Use -1 if missing)
     features['length_url'] = len(url)
     features['domain_length'] = len(domain)
     features['directory_length'] = len(directory) if has_directory else -1
@@ -83,56 +106,73 @@ def extract_111_features(url):
     features['params_length'] = len(params) if has_params else -1
     features['qty_params'] = len(params.split('&')) if has_params else -1
     
-    # Special Features
     features['email_in_url'] = 1 if re.search(r'[\w\.-]+@[\w\.-]+', url) else 0
     features['tls_ssl_certificate'] = 1 if url.startswith('https') else 0
     
-    # Fill remaining required columns with -1 to be safe and match the exact model shape
     final_row = [features.get(col, -1) for col in expected_features]
     return pd.DataFrame([final_row], columns=expected_features)
 
 
-# 3. The API Endpoint for the Mobile App
+# ---------------------------------------------------------
+# 3. API ENDPOINT
+# ---------------------------------------------------------
 @app.route('/analyze-link', methods=['POST'])
 def analyze_link():
-    # Safety check if the model failed to load on startup
-    if rf_model is None:
-        return jsonify({"error": "AI Model is offline.", "status": "failed"}), 500
-
     try:
-        # Catch the JSON sent by the React Native app
         data = request.get_json()
-        target_url = data.get('url')
+        target_url = data.get('url', '').strip().lower()
 
         if not target_url:
-            return jsonify({"error": "No URL provided in the payload.", "status": "failed"}), 400
+            return jsonify({"error": "No URL provided.", "status": "failed"}), 400
 
-        # Run your exact notebook extraction script
+        # Parse domain for list checking
+        parsed = urlparse(target_url if target_url.startswith(('http://', 'https://')) else 'http://' + target_url)
+        domain = parsed.netloc.replace('www.', '')
+
+        # --- GATE 1: BLACKLIST CHECK ---
+        if target_url in blacklist_urls or domain in blacklist_urls:
+            return jsonify({
+                "scanned_url": target_url,
+                "is_phishing": True,
+                "verdict": "Phishing",
+                "protocol": "Blacklist Protocol",
+                "confidence": 100.0,
+                "status": "success"
+            })
+
+        # --- GATE 2: WHITELIST CHECK ---
+        if domain in whitelist_domains:
+            return jsonify({
+                "scanned_url": target_url,
+                "is_phishing": False,
+                "verdict": "Safe",
+                "protocol": "Whitelist Protocol",
+                "confidence": 100.0,
+                "status": "success"
+            })
+
+        # --- GATE 3: AI MODEL (GREYLIST) ---
+        if rf_model is None:
+            return jsonify({"error": "AI Model offline and URL not on lists.", "status": "failed"}), 500
+
         features_df = extract_111_features(target_url)
-        
-        # Run the AI prediction
         prediction = rf_model.predict(features_df)[0]
-        
-        # Get the confidence score (probability)
         probabilities = rf_model.predict_proba(features_df)[0]
         
-        # Assuming 1 is Phishing and 0 is Safe
         is_phishing = bool(prediction == 1)
         confidence_score = probabilities[1] if is_phishing else probabilities[0]
 
-        # Return the final result to the app
         return jsonify({
             "scanned_url": target_url,
             "is_phishing": is_phishing,
+            "verdict": "Phishing" if is_phishing else "Safe",
+            "protocol": "AI RF Analysis (Greylist)",
             "confidence": round(confidence_score * 100, 2),
             "status": "success"
         })
 
     except Exception as e:
-        # Catch any errors during extraction or prediction
         return jsonify({"error": str(e), "status": "failed"}), 500
 
 if __name__ == '__main__':
-    # Running on 0.0.0.0 allows your phone to connect to the server 
-    # as long as both are on the same Wi-Fi network.
     app.run(host='0.0.0.0', port=5000, debug=True)
