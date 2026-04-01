@@ -7,11 +7,15 @@ import {
   TouchableOpacity, 
   ScrollView,
   ActivityIndicator,
-  Alert
+  Alert,
+  Modal
 } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard'; 
 import AsyncStorage from '@react-native-async-storage/async-storage'; 
+
+// --- NEW: Import Firebase Auth ---
+import { getAuth } from 'firebase/auth';
 
 import { useTheme } from '../../context/ThemeContext'; 
 
@@ -29,6 +33,9 @@ export default function ScanScreen() {
   const [confidence, setConfidence] = useState('0'); 
   const [protocol, setProtocol] = useState(''); 
   const [isCached, setIsCached] = useState(false);
+
+  // --- NEW: Verification Modal State ---
+  const [isVerificationModalVisible, setIsVerificationModalVisible] = useState(false);
 
   // 1. Grab the dark mode state
   const { isDark } = useTheme();
@@ -87,6 +94,19 @@ export default function ScanScreen() {
   };
 
   const handleScan = async () => {
+    // --- NEW: VERIFICATION LOCKDOWN ---
+    const auth = getAuth();
+    const user = auth.currentUser;
+
+    if (user && !user.emailVerified) {
+      await user.reload(); // Fetch the absolute latest status from Firebase
+      if (!user.emailVerified) {
+        setIsVerificationModalVisible(true); // Pop the modal and block the scan
+        return; 
+      }
+    }
+    // ----------------------------------
+
     const cleanUrl = url.trim();
     if (!cleanUrl) {
       Alert.alert("Input Required", "Please enter a URL to scan.");
@@ -366,6 +386,39 @@ export default function ScanScreen() {
 
         </View>
       </ScrollView>
+
+      {/* --- NEW: VERIFICATION REQUIRED MODAL --- */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={isVerificationModalVisible}
+        onRequestClose={() => setIsVerificationModalVisible(false)}
+      >
+        <View style={styles.modalOverlayCenter}>
+          <View style={[styles.modalContainer, { backgroundColor: cardColor }]}>
+            
+            <View style={[styles.modalIconWrapper, { backgroundColor: '#FFF0F0' }]}>
+              <MaterialCommunityIcons name="shield-lock-outline" size={32} color={redAccent} />
+            </View>
+            
+            <Text style={[styles.modalTitle, { color: textColorPrimary }]}>Verification Required</Text>
+            
+            <Text style={[styles.modalBody, { color: textColorSecondary }]}>
+              Your account must be verified to perform heuristic URL scanning. Please check your email inbox or visit your Profile to secure your account.
+            </Text>
+
+            <TouchableOpacity 
+              style={[styles.modalActionBtn, { backgroundColor: isDark ? '#4DA8DA' : '#2D4356' }]}
+              activeOpacity={0.8}
+              onPress={() => setIsVerificationModalVisible(false)}
+            >
+              <Text style={styles.modalActionBtnText}>UNDERSTOOD</Text>
+            </TouchableOpacity>
+            
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }
@@ -412,5 +465,14 @@ const styles = StyleSheet.create({
   metricsRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(150, 150, 150, 0.2)' },
   metricBadge: { flex: 1, padding: 10, borderRadius: 8, alignItems: 'center', marginHorizontal: 4 },
   metricLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5, marginBottom: 4 },
-  metricValue: { fontSize: 16, fontWeight: 'bold' }
+  metricValue: { fontSize: 16, fontWeight: 'bold' },
+
+  // --- NEW: MODAL STYLES ---
+  modalOverlayCenter: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 24 },
+  modalContainer: { borderRadius: 30, padding: 30, alignItems: 'center', width: '100%', shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 20, elevation: 10 },
+  modalIconWrapper: { width: 70, height: 70, borderRadius: 35, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
+  modalTitle: { fontSize: 22, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' },
+  modalBody: { fontSize: 14, textAlign: 'center', lineHeight: 22, marginBottom: 30, paddingHorizontal: 10 },
+  modalActionBtn: { width: '100%', paddingVertical: 18, borderRadius: 25, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 5, elevation: 4 },
+  modalActionBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: 'bold', letterSpacing: 1 },
 });
