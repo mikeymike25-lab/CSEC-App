@@ -1,4 +1,3 @@
-<<<<<<< Updated upstream
 import React, { useState } from 'react';
 import { 
   StyleSheet, 
@@ -7,166 +6,118 @@ import {
   TextInput, 
   TouchableOpacity, 
   SafeAreaView, 
-  Platform,
   Image,
   StatusBar,
   TouchableWithoutFeedback,
-  Keyboard
+  Keyboard,
+  Alert,
+  ActivityIndicator
 } from 'react-native';
 import { Ionicons, FontAwesome } from '@expo/vector-icons'; 
 import { useRouter } from 'expo-router'; 
-=======
-import { FontAwesome, Ionicons } from '@expo/vector-icons';
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import {
-  Alert,
-  Keyboard,
-  SafeAreaView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
-  View,
-} from 'react-native';
->>>>>>> Stashed changes
+
+// --- FIREBASE IMPORTS ---
+import { auth } from '../firebaseConfig'; 
+import { signInWithEmailAndPassword } from 'firebase/auth';
+
+// --- THEME CONTEXT ---
+import { useTheme } from '../context/ThemeContext';
 
 export default function LoginScreen() {
   const router = useRouter();
-<<<<<<< Updated upstream
-  const [passwordVisible, setPasswordVisible] = useState(false);
+  const { isDark } = useTheme();
   
-=======
+  // --- STATE VARIABLES ---
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  useEffect(() => {
-    GoogleSignin.configure({
-      webClientId: '251221632759-pskohqm9190nq399sptr9v7b6vha5gqf.apps.googleusercontent.com',
-    });
-  }, []);
+  // --- DYNAMIC COLORS ---
+  const bgColor = isDark ? '#121A21' : '#F9F7E8';
+  const inputBg = isDark ? '#1A242E' : '#FFFFFF';
+  const textColor = isDark ? '#FFFFFF' : '#1E3246';
+  const placeholderColor = isDark ? '#606A75' : '#A9A9A9';
+  const cardShadow = isDark ? '#000' : '#8A9AA9';
 
-  const handleLogin = async () => {
+  // --- LOGIN LOGIC ---
+  const handleEmailLogin = async () => {
+    setErrorMessage(''); 
+    Keyboard.dismiss();
+
     if (!email || !password) {
-      Alert.alert('Error', 'Please enter both email and password.');
+      setErrorMessage('Please fill in both email and password.');
       return;
     }
 
-    try {
-      const userCredential = await auth().signInWithEmailAndPassword(
-        email,
-        password
-      );
-
-      await firestore()
-        .collection('accounts')
-        .doc(userCredential.user.uid)
-        .update({
-          lastLogin: firestore.FieldValue.serverTimestamp(),
-        });
-
-      // TypeScript strict routing fix applied here
-      router.replace('/home' as any);
-    } catch (error: any) {
-      Alert.alert('Login Failed', error.message);
+    const emailRegex = /\S+@\S+\.\S+/;
+    if (!emailRegex.test(email)) {
+      setErrorMessage('Please enter a valid email address format.');
+      return;
     }
-  };
 
-  const handleGoogleLogin = async () => {
+    setIsLoading(true);
     try {
-      await GoogleSignin.hasPlayServices({
-        showPlayServicesUpdateDialog: true,
-      });
-      
-      const userInfo: any = await GoogleSignin.signIn();
-      const idToken = userInfo?.data?.idToken || userInfo?.idToken;
-
-      if (!idToken) {
-        throw new Error('No ID token found');
-      }
-
-      const googleCredential = auth.GoogleAuthProvider.credential(idToken);
-      const userCredential = await auth().signInWithCredential(googleCredential);
-
-      const userDoc = await firestore()
-        .collection('accounts')
-        .doc(userCredential.user.uid)
-        .get();
-
-      if (!userDoc.exists) {
-        await firestore()
-          .collection('accounts')
-          .doc(userCredential.user.uid)
-          .set({
-            email: userCredential.user.email || '',
-            displayName: userCredential.user.displayName || 'Google User',
-            role: 'standard_user',
-            accountStatus: 'active',
-            createdAt: firestore.FieldValue.serverTimestamp(),
-            lastLogin: firestore.FieldValue.serverTimestamp(),
-          });
-
-        await firestore()
-          .collection('preferences')
-          .doc(userCredential.user.uid)
-          .set({
-            autoScanEnabled: true,
-            pushNotifications: true,
-            strictMode: false,
-            theme: 'system_default',
-          });
+      await signInWithEmailAndPassword(auth, email.trim(), password);
+      router.replace('/tabs');
+    } catch (e) { 
+      const error = e as any; 
+      if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+        setErrorMessage('Invalid email or password. Please try again.');
       } else {
-        await firestore()
-          .collection('accounts')
-          .doc(userCredential.user.uid)
-          .update({
-            lastLogin: firestore.FieldValue.serverTimestamp(),
-          });
+        setErrorMessage(error.message); 
       }
-
-      // TypeScript strict routing fix applied here
-      router.replace('/home' as any);
-    } catch (error: any) {
-      console.error(error);
-      Alert.alert('Google Login Failed', error.message);
+    } finally { 
+      setIsLoading(false);
     }
   };
->>>>>>> Stashed changes
+
+  const handleGoogleLogin = () => {
+    Alert.alert(
+      "Feature Disabled", 
+      "Google Sign-In requires a custom Android build. Please use Email/Password to test in Expo Go."
+    );
+  };
 
   return (
-    // TouchableWithoutFeedback allows closing the keyboard by tapping the background
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor="#F9F7E8" />
-
+      <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]}>
+        <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={bgColor} />
+        
         <View style={styles.innerContainer}>
-<<<<<<< Updated upstream
           
-         <Image 
-           
+          <Image 
             source={require('../assets/images/C-SECLOGO.png')} 
             style={styles.logoImage}
             resizeMode="contain" 
           />
+          
+          {/* Error Message Display */}
+          {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+
           {/* Input Fields */}
           <View style={styles.inputContainer}>
             <TextInput 
-              style={styles.input} 
+              style={[styles.input, { backgroundColor: inputBg, color: textColor, shadowColor: cardShadow }]} 
               placeholder="Email" 
-              placeholderTextColor="#A9A9A9"
+              placeholderTextColor={placeholderColor}
               keyboardType="email-address"
               autoCapitalize="none"
+              value={email}
+              onChangeText={setEmail} 
+              editable={!isLoading}
             />
             
-            <View style={styles.passwordWrapper}>
+            <View style={[styles.passwordWrapper, { backgroundColor: inputBg, shadowColor: cardShadow }]}>
               <TextInput 
-                style={styles.passwordInput} 
+                style={[styles.passwordInput, { color: textColor }]} 
                 placeholder="Password" 
-                placeholderTextColor="#A9A9A9"
+                placeholderTextColor={placeholderColor}
                 secureTextEntry={!passwordVisible}
+                value={password}
+                onChangeText={setPassword} 
+                editable={!isLoading}
               />
               <TouchableOpacity 
                 onPress={() => setPasswordVisible(!passwordVisible)}
@@ -175,120 +126,46 @@ export default function LoginScreen() {
                 <Ionicons 
                   name={passwordVisible ? "eye-off" : "eye"} 
                   size={22} 
-                  color="#555" 
-=======
-          <View style={styles.headerContainer}>
-            <Ionicons name="shield-checkmark" size={50} color="#2D4356" />
-            <Text style={styles.logoText}>C-SEC</Text>
-          </View>
-          <Text style={styles.subtitle}>Secure Access Portal</Text>
-
-          <View style={styles.inputContainer}>
-            <View style={styles.inputWrapper}>
-              <Ionicons
-                name="mail-outline"
-                size={20}
-                color="#888"
-                style={styles.inputIcon}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Email Address"
-                placeholderTextColor="#A9A9A9"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                value={email}
-                onChangeText={setEmail}
-              />
-            </View>
-
-            <View style={styles.inputWrapper}>
-              <Ionicons
-                name="lock-closed-outline"
-                size={20}
-                color="#888"
-                style={styles.inputIcon}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Password"
-                placeholderTextColor="#A9A9A9"
-                secureTextEntry={!passwordVisible}
-                value={password}
-                onChangeText={setPassword}
-              />
-              <TouchableOpacity
-                onPress={() => setPasswordVisible(!passwordVisible)}
-                style={styles.eyeIcon}
-              >
-                <Ionicons
-                  name={passwordVisible ? 'eye-off' : 'eye'}
-                  size={22}
-                  color="#888"
->>>>>>> Stashed changes
+                  color={placeholderColor} 
                 />
               </TouchableOpacity>
             </View>
           </View>
 
-<<<<<<< Updated upstream
           {/* Login Button */}
-          <TouchableOpacity style={styles.loginButton} activeOpacity={0.8}>
-=======
-          <TouchableOpacity
-            style={styles.loginButton}
+          <TouchableOpacity 
+            style={[styles.loginButton, isLoading && { opacity: 0.7 }]} 
             activeOpacity={0.8}
-            onPress={handleLogin}
+            onPress={handleEmailLogin} 
+            disabled={isLoading}
           >
->>>>>>> Stashed changes
-            <Text style={styles.loginButtonText}>LOGIN</Text>
-            <Ionicons
-              name="arrow-forward"
-              size={20}
-              color="#FFF"
-              style={{ marginLeft: 8 }}
-            />
+            {isLoading ? (
+              <ActivityIndicator color="#FFF" />
+            ) : (
+              <Text style={styles.loginButtonText}>LOGIN</Text>
+            )}
           </TouchableOpacity>
 
           {/* Sign Up Link */}
-        <View style={styles.signupContainer}>
-            <Text style={styles.signupText}>Don't have an account yet? </Text>
-<<<<<<< Updated upstream
-         <TouchableOpacity onPress={() => router.push('/signup')}> 
-            <Text style={styles.signupLink}>Sign up</Text>
-          </TouchableOpacity>
-        </View>
-
-          <View style={styles.divider} />
-
-          {/* Social Icons */}
-          <View style={styles.socialContainer}>
-            <TouchableOpacity style={styles.socialIconBox}>
-               <FontAwesome name="google" size={24} color="#cd382a" />
-            </TouchableOpacity>
-=======
-            {/* TypeScript strict routing fix applied here */}
-            <TouchableOpacity onPress={() => router.push('/register' as any)}>
+          <View style={styles.signupContainer}>
+            <Text style={[styles.signupText, { color: textColor }]}>Don't have an account yet? </Text>
+            <TouchableOpacity onPress={() => router.push('/signup')}> 
               <Text style={styles.signupLink}>Sign up</Text>
             </TouchableOpacity>
           </View>
 
-          <View style={styles.dividerContainer}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>OR</Text>
-            <View style={styles.dividerLine} />
->>>>>>> Stashed changes
-          </View>
+          <View style={[styles.divider, { backgroundColor: isDark ? '#2D4356' : '#DDD' }]} />
 
+          {/* Social Icons */}
           <View style={styles.socialContainer}>
-            <TouchableOpacity
-              style={styles.socialButton}
+            <TouchableOpacity 
+              style={[styles.socialIconBox, { backgroundColor: inputBg, shadowColor: cardShadow }]} 
               onPress={handleGoogleLogin}
             >
-              <FontAwesome name="google" size={20} color="#cd382a" />
-              <Text style={styles.socialButtonText}>Continue with Google</Text>
+               <FontAwesome name="google" size={24} color="#cd382a" />
             </TouchableOpacity>
           </View>
+
         </View>
       </SafeAreaView>
     </TouchableWithoutFeedback>
@@ -296,224 +173,38 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9F7E8',
-  },
-  innerContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 30,
-  },
-<<<<<<< Updated upstream
-  
-  logoImage: {
-    width: 400, 
-    height: 250, 
-    marginBottom: 0,
-  },
-  inputContainer: {
-    width: '100%',
-    marginBottom: 20,
-  },
+  container: { flex: 1 },
+  innerContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 30 },
+  errorText: { color: '#cd382a', marginBottom: 10, textAlign: 'center', fontWeight: 'bold' },
+  logoImage: { width: 400, height: 200, marginBottom: 20 },
+  inputContainer: { width: '100%', marginBottom: 20 },
   input: {
-    backgroundColor: '#FFF',
-    height: 55,
-    borderRadius: 30,
-    paddingHorizontal: 25,
-    fontSize: 16,
-    marginBottom: 15,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    height: 55, borderRadius: 30, paddingHorizontal: 25,
+    fontSize: 16, marginBottom: 15, elevation: 3,
+    shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4,
   },
   passwordWrapper: {
-=======
-  headerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 5,
+    flexDirection: 'row', alignItems: 'center',
+    height: 55, borderRadius: 30, elevation: 3,
+    shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4,
   },
-  logoText: {
-    fontSize: 42,
-    fontWeight: '900',
-    color: '#2D4356',
-    letterSpacing: 2,
-    marginLeft: 10,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#666',
-    marginBottom: 40,
-    fontWeight: '500',
-    letterSpacing: 1,
-  },
-  inputContainer: {
-    width: '100%',
-    marginBottom: 15,
-  },
-  inputWrapper: {
->>>>>>> Stashed changes
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF',
-    height: 55,
-<<<<<<< Updated upstream
-    borderRadius: 30,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  passwordInput: {
-    flex: 1,
-    paddingHorizontal: 25,
-    fontSize: 16,
-  },
-  eyeIcon: {
-    paddingRight: 20,
-=======
-    borderRadius: 15,
-    marginBottom: 15,
-    paddingHorizontal: 15,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-  },
-  inputIcon: {
-    marginRight: 10,
-  },
-  input: {
-    flex: 1,
-    fontSize: 16,
-    color: '#333',
-  },
-  eyeIcon: {
-    padding: 10,
->>>>>>> Stashed changes
-  },
+  passwordInput: { flex: 1, paddingHorizontal: 25, fontSize: 16 },
+  eyeIcon: { paddingRight: 20 },
   loginButton: {
-    backgroundColor: '#2D4356',
-    width: '100%',
-    height: 55,
-<<<<<<< Updated upstream
-    borderRadius: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 10,
-=======
-    borderRadius: 15,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 10,
-    elevation: 3,
-    shadowColor: '#2D4356',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
->>>>>>> Stashed changes
+    backgroundColor: '#2D4356', width: '100%', height: 55, borderRadius: 30,
+    justifyContent: 'center', alignItems: 'center', marginTop: 10,
   },
-  loginButtonText: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-<<<<<<< Updated upstream
-  },
-  signupContainer: {
-    flexDirection: 'row',
-    marginTop: 20,
-  },
-  signupText: {
-    color: '#333',
-  },
-  signupLink: {
-    color: '#4169E1',
-    fontWeight: '600',
-  },
-  divider: {
-    width: '80%',
-    height: 1,
-    backgroundColor: '#DDD',
-    marginTop: 40,
-    marginBottom: 30,
-  },
-  socialContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
+  loginButtonText: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
+  signupContainer: { flexDirection: 'row', marginTop: 20 },
+  // FIXED: Added signupText back to the stylesheet
+  signupText: { fontSize: 14 },
+  signupLink: { color: '#4169E1', fontWeight: '600' },
+  divider: { width: '80%', height: 1, marginTop: 40, marginBottom: 30 },
+  socialContainer: { flexDirection: 'row', justifyContent: 'center' },
   socialIconBox: {
-    backgroundColor: '#FFF',
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginHorizontal: 10,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-=======
-    letterSpacing: 1,
-  },
-  signupContainer: {
-    flexDirection: 'row',
-    marginTop: 25,
-  },
-  signupText: {
-    color: '#555',
-    fontSize: 15,
-  },
-  signupLink: {
-    color: '#2D4356',
-    fontWeight: 'bold',
-    fontSize: 15,
-  },
-  dividerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '100%',
-    marginVertical: 35,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#DDD',
-  },
-  dividerText: {
-    marginHorizontal: 15,
-    color: '#888',
-    fontWeight: '600',
-  },
-  socialContainer: {
-    width: '100%',
-  },
-  socialButton: {
-    flexDirection: 'row',
-    backgroundColor: '#FFF',
-    height: 55,
-    borderRadius: 15,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-  },
-  socialButtonText: {
-    marginLeft: 12,
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#444',
->>>>>>> Stashed changes
+    width: 50, height: 50, borderRadius: 25,
+    justifyContent: 'center', alignItems: 'center', marginHorizontal: 10,
+    elevation: 4, shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15, shadowRadius: 4,
   },
 });
