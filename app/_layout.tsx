@@ -2,7 +2,6 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
-import LottieView from 'lottie-react-native';
 
 // Firebase imports
 import { onAuthStateChanged, User } from 'firebase/auth';
@@ -11,8 +10,9 @@ import { auth } from '../firebaseConfig';
 // Context & Components
 import LinkInterceptor from '../components/LinkInterceptor';
 import { ThemeProvider } from '../context/ThemeContext';
+import AnimatedSplash from '../components/AnimatedSplash';
 
-// 1. Tell the splash screen to stay visible until we are ready
+// Keep native splash screen hidden behind our custom one
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
@@ -23,81 +23,58 @@ export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
 
+  // 1. The Official 3-Second Timer
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsAnimationDone(true);
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, []);
+
   // 2. Check Firebase Auth State
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      setIsFirebaseReady(true); // Firebase has finished checking
+      setIsFirebaseReady(true); 
     });
-
     return unsubscribe;
   }, []);
 
-  // 3. Handle Routing once BOTH Firebase and the Animation are done
+  // 3. Handle Safe Routing
   useEffect(() => {
     if (!isFirebaseReady || !isAnimationDone) return; 
 
-    const publicScreens = ['index', 'signup']; 
-    
-    // Safely grab the first segment
-    const currentRoute = segments[0]; 
-    const isPublicScreen = !currentRoute || publicScreens.includes(currentRoute);
+    // Once both are done, hide the native splash screen underneath
+    SplashScreen.hideAsync();
 
-    if (user && isPublicScreen) {
+    // Prevent routing loops by checking if we are already in the right place
+    const inAuthGroup = segments[0] === 'tabs';
+
+    if (user && !inAuthGroup) {
       router.replace('/tabs');
-    } else if (!user && !isPublicScreen) {
+    } else if (!user && inAuthGroup) {
       router.replace('/');
     }
-
   }, [user, isFirebaseReady, isAnimationDone, segments]);
 
-  // 4. Render the Lottie Animation First
-  if (!isAnimationDone) {
-    return (
-      <View style={styles.animationContainer}>
-        <LottieView
-          autoPlay
-          loop={false}
-          // Make sure this path points to your actual Lottie JSON file!
-          source={require('../assets/csec-animation.json')} 
-          style={{ width: '100%', height: '100%' }}
-          onAnimationFinish={() => {
-            setIsAnimationDone(true);
-            SplashScreen.hideAsync(); // Hide native background once animation finishes
-          }}
-        />
-      </View>
-    );
-  }
-
-  // Fallback just in case the animation finishes before Firebase responds
-  if (!isFirebaseReady) {
-    return <View style={styles.animationContainer} />;
-  }
-
-  // 5. Render the App with Theme, Navigation, and Global Interceptor
   return (
     <ThemeProvider>
-      <>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="index" /> 
-          <Stack.Screen name="signup" />
-          <Stack.Screen name="tabs" />
-          <Stack.Screen name="appearance" /> 
-        </Stack>
+      {/* ⚠️ CRITICAL: The Stack MUST always be rendered in Expo Router */}
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" /> 
+        <Stack.Screen name="signup" />
+        <Stack.Screen name="tabs" />
+        <Stack.Screen name="appearance" /> 
+      </Stack>
+      
+      <LinkInterceptor />
 
-        {/* The Interceptor stays mounted globally to catch links anywhere */}
-        <LinkInterceptor />
-      </>
+      {/* 🎯 THE FIX: Render the Custom Splash Screen ON TOP of the app as an overlay */}
+      {(!isAnimationDone || !isFirebaseReady) && (
+        <View style={[StyleSheet.absoluteFill, { zIndex: 999, elevation: 999 }]}>
+          <AnimatedSplash />
+        </View>
+      )}
     </ThemeProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  animationContainer: {
-    flex: 1,
-    backgroundColor: '#F9F7E8', // Matches your app.json splash background
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});

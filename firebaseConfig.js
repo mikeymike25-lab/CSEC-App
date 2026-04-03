@@ -1,6 +1,9 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
-import { getAuth } from "firebase/auth"; 
+// 1. Updated Auth imports for React Native
+import { getReactNativePersistence, initializeAuth } from "firebase/auth";
+// 2. Import AsyncStorage
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
@@ -17,5 +20,10 @@ const app = initializeApp(firebaseConfig);
 
 // Export services to use them in your screens
 export const db = getFirestore(app);
-export const auth = getAuth(app);
+
+// 3. Initialize Auth WITH AsyncStorage persistence to prevent hanging
+export const auth = initializeAuth(app, {
+  persistence: getReactNativePersistence(AsyncStorage)
+});
+
 export const storage = getStorage(app);

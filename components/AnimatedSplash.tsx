@@ -1,14 +1,12 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useEffect, useRef } from 'react';
 import { Animated, Image, StyleSheet, Text, View } from 'react-native';
-import { useTheme } from '../context/ThemeContext'; 
+import { useTheme } from '../context/ThemeContext';
 
-// 1. TypeScript Interface to define the props
 interface AnimatedSplashProps {
   onAnimationComplete?: () => void;
 }
 
-// 2. Apply the interface to the component
 export default function AnimatedSplash({ onAnimationComplete }: AnimatedSplashProps) {
   const { isDark } = useTheme();
   
@@ -51,15 +49,18 @@ export default function AnimatedSplash({ onAnimationComplete }: AnimatedSplashPr
       ])
     ).start();
 
-    // 3. Trigger the completion callback after 3 seconds instead of routing
+    // 3. Trigger the completion callback after 3 seconds
     const timer = setTimeout(() => {
       if (onAnimationComplete) {
         onAnimationComplete();
       }
     }, 3000);
 
+    // Cleanup
     return () => clearTimeout(timer);
-  }, [onAnimationComplete]); // Added to dependency array for good measure
+    
+  // 👇 THIS IS THE FIX. Empty array means "run once and only once".
+  }, []); 
 
   return (
     <View style={[styles.container, { backgroundColor: bgColor }]}>
