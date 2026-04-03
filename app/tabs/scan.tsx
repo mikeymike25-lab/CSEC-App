@@ -1,23 +1,23 @@
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Clipboard from 'expo-clipboard';
 import React, { useState } from 'react';
-import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  TextInput, 
-  TouchableOpacity, 
-  ScrollView,
+import {
   ActivityIndicator,
   Alert,
-  Modal
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import * as Clipboard from 'expo-clipboard'; 
-import AsyncStorage from '@react-native-async-storage/async-storage'; 
 
 // --- NEW: Import Firebase Auth ---
 import { getAuth } from 'firebase/auth';
 
-import { useTheme } from '../../context/ThemeContext'; 
+import { useTheme } from '../../context/ThemeContext';
 
 export default function ScanScreen() {
   const [url, setUrl] = useState('');
@@ -71,8 +71,9 @@ export default function ScanScreen() {
       const existingHistory = await AsyncStorage.getItem('csec_history');
       const history = existingHistory ? JSON.parse(existingHistory) : [];
 
-      const nextIdNumber = history.length + 1;
-      const formattedId = `#${nextIdNumber.toString().padStart(2, '0')}`;
+      // --- FIX: Generate a random 4-digit ID instead of array length ---
+      const randomId = Math.floor(1000 + Math.random() * 9000);
+      const formattedId = `#${randomId}`;
 
       const newEntry = {
         id: formattedId, 

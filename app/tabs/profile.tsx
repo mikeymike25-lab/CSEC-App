@@ -18,7 +18,7 @@ import {
 
 // --- FIREBASE IMPORTS ---
 import { getAuth, sendEmailVerification, signOut, updateProfile } from 'firebase/auth';
-import { doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../../firebaseConfig';
 
 // --- THEME CONTEXT ---

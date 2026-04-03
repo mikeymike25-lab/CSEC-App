@@ -12,8 +12,6 @@
       "bundleIdentifier": "com.csec.app"
     },
     "splash": {
-      "image": "./assets/images/C-SECLOGO.png",
-      "resizeMode": "contain",
       "backgroundColor": "#F9F7E8"
     },
     "android": {
@@ -53,9 +51,6 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/C-SECLOGO.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
           "backgroundColor": "#F9F7E8",
           "dark": {
             "backgroundColor": "#000000"
@@ -72,6 +67,12 @@
       "eas": {
         "projectId": "7b80ccea-855a-42c7-9505-f07e83d788c8"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/7b80ccea-855a-42c7-9505-f07e83d788c8"
     }
   }
 }

@@ -1,20 +1,23 @@
-import { useEffect, useState } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import { useEffect, useState } from 'react';
+import { View, StyleSheet } from 'react-native';
+import LottieView from 'lottie-react-native';
 
 // Firebase imports
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth } from '../firebaseConfig'; 
+import { auth } from '../firebaseConfig';
 
 // Context & Components
+import LinkInterceptor from '../components/LinkInterceptor';
 import { ThemeProvider } from '../context/ThemeContext';
-import LinkInterceptor from '../components/LinkInterceptor'; // <-- ADDED THIS IMPORT
 
 // 1. Tell the splash screen to stay visible until we are ready
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const [isAppReady, setIsAppReady] = useState(false);
+  const [isFirebaseReady, setIsFirebaseReady] = useState(false);
+  const [isAnimationDone, setIsAnimationDone] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   
   const router = useRouter();
@@ -24,15 +27,15 @@ export default function RootLayout() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      setIsAppReady(true); // Firebase has finished checking
+      setIsFirebaseReady(true); // Firebase has finished checking
     });
 
     return unsubscribe;
   }, []);
 
-  // 3. Handle Routing and Hiding the Splash Screen
+  // 3. Handle Routing once BOTH Firebase and the Animation are done
   useEffect(() => {
-    if (!isAppReady) return; 
+    if (!isFirebaseReady || !isAnimationDone) return; 
 
     const publicScreens = ['index', 'signup']; 
     
@@ -46,15 +49,33 @@ export default function RootLayout() {
       router.replace('/');
     }
 
-    SplashScreen.hideAsync();
+  }, [user, isFirebaseReady, isAnimationDone, segments]);
 
-  }, [user, isAppReady, segments]);
-
-  if (!isAppReady) {
-    return null; 
+  // 4. Render the Lottie Animation First
+  if (!isAnimationDone) {
+    return (
+      <View style={styles.animationContainer}>
+        <LottieView
+          autoPlay
+          loop={false}
+          // Make sure this path points to your actual Lottie JSON file!
+          source={require('../assets/csec-animation.json')} 
+          style={{ width: '100%', height: '100%' }}
+          onAnimationFinish={() => {
+            setIsAnimationDone(true);
+            SplashScreen.hideAsync(); // Hide native background once animation finishes
+          }}
+        />
+      </View>
+    );
   }
 
-  // 4. Render the App with Theme, Navigation, and Global Interceptor
+  // Fallback just in case the animation finishes before Firebase responds
+  if (!isFirebaseReady) {
+    return <View style={styles.animationContainer} />;
+  }
+
+  // 5. Render the App with Theme, Navigation, and Global Interceptor
   return (
     <ThemeProvider>
       <>
@@ -71,3 +92,12 @@ export default function RootLayout() {
     </ThemeProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  animationContainer: {
+    flex: 1,
+    backgroundColor: '#F9F7E8', // Matches your app.json splash background
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

@@ -1,0 +1,102 @@
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import React, { useEffect, useRef } from 'react';
+import { Animated, Image, StyleSheet, Text, View } from 'react-native';
+import { useTheme } from '../context/ThemeContext'; 
+
+// 1. TypeScript Interface to define the props
+interface AnimatedSplashProps {
+  onAnimationComplete?: () => void;
+}
+
+// 2. Apply the interface to the component
+export default function AnimatedSplash({ onAnimationComplete }: AnimatedSplashProps) {
+  const { isDark } = useTheme();
+  
+  // Animation Values
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
+  const scanAnim = useRef(new Animated.Value(0)).current;
+
+  const bgColor = isDark ? '#121A21' : '#F9F7E8';
+  const textColor = isDark ? '#4DA8DA' : '#1E3246';
+
+  useEffect(() => {
+    // 1. Fade in and scale up the logo
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 1000,
+        useNativeDriver: true,
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        friction: 4,
+        useNativeDriver: true,
+      })
+    ]).start();
+
+    // 2. Continuous "Scanning" pulse effect
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(scanAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(scanAnim, {
+          toValue: 0,
+          duration: 800,
+          useNativeDriver: true,
+        })
+      ])
+    ).start();
+
+    // 3. Trigger the completion callback after 3 seconds instead of routing
+    const timer = setTimeout(() => {
+      if (onAnimationComplete) {
+        onAnimationComplete();
+      }
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, [onAnimationComplete]); // Added to dependency array for good measure
+
+  return (
+    <View style={[styles.container, { backgroundColor: bgColor }]}>
+      
+      <Animated.View style={{ opacity: fadeAnim, transform: [{ scale: scaleAnim }], alignItems: 'center' }}>
+        <Image 
+          source={require('../assets/images/C-SECLOGO.png')} 
+          style={styles.logo}
+          resizeMode="contain"
+        />
+        
+        <View style={styles.techTextContainer}>
+          <MaterialCommunityIcons name="shield-sync" size={20} color={textColor} style={styles.icon} />
+          <Text style={[styles.techText, { color: textColor }]}>
+            INITIALIZING SENTINEL ENGINE...
+          </Text>
+        </View>
+
+        {/* The Scanning/Pulsing Line */}
+        <Animated.View style={[
+          styles.scanLine, 
+          { 
+            backgroundColor: textColor,
+            opacity: scanAnim 
+          }
+        ]} />
+      </Animated.View>
+
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  logo: { width: 250, height: 250, marginBottom: 40 },
+  techTextContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  icon: { marginRight: 8 },
+  techText: { fontSize: 12, fontWeight: '800', letterSpacing: 2, textTransform: 'uppercase' },
+  scanLine: { width: 200, height: 2, marginTop: 10, shadowColor: '#4DA8DA', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 10, elevation: 5 }
+});

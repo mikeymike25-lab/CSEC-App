@@ -1,7 +1,7 @@
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Platform, StatusBar, Animated } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Animated, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // --- IMPORT THE THEME TOWER ---
