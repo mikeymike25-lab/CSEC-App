@@ -1,10 +1,43 @@
 import { Tabs } from 'expo-router';
-import { View, Text, StyleSheet, Platform, StatusBar } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Platform, StatusBar, Animated } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // --- IMPORT THE THEME TOWER ---
 import { useTheme } from '../../context/ThemeContext';
+
+// --- CUSTOM ANIMATED HEADER LOGO ---
+const AnimatedHeaderLogo = ({ isDark }: { isDark: boolean }) => {
+  const cursorOpacity = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    // Hardware-Accelerated Terminal Blink
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(cursorOpacity, {
+          toValue: 0,
+          duration: 100, // Quick fade out
+          useNativeDriver: true,
+        }),
+        Animated.delay(400), // Pause
+        Animated.timing(cursorOpacity, {
+          toValue: 1,
+          duration: 100, // Quick fade in
+          useNativeDriver: true,
+        }),
+        Animated.delay(400) // Pause
+      ])
+    ).start();
+  }, [cursorOpacity]);
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <Text style={[styles.headerLogoText, { color: isDark ? '#FFFFFF' : '#000000' }]}>CSEC</Text>
+      <Animated.Text style={[styles.headerLogoText, { color: isDark ? '#4DA8DA' : '#2D4356', opacity: cursorOpacity }]}>_</Animated.Text>
+    </View>
+  );
+};
 
 const TabIcon = ({ name, label, focused, isDark }: { name: any, label: string, focused: boolean, isDark: boolean }) => {
   // Define active color for the focused pill
@@ -31,9 +64,9 @@ export default function TabLayout() {
   // 1. Grab the theme state
   const { isDark } = useTheme();
 
-  // 2. Define dynamic navigation colors
+  // 2. Define dynamic navigation colors (NOW MATCHED)
   const barBgColor = isDark ? '#1A242E' : '#FBFBF9';
-  const headerBgColor = isDark ? '#121A21' : '#FBFBF9';
+  const headerBgColor = isDark ? '#1A242E' : '#FBFBF9'; // MATCHES BOTTOM NAV EXACTLY
   const headerTextColor = isDark ? '#FFFFFF' : '#000000';
 
   return (
@@ -47,14 +80,8 @@ export default function TabLayout() {
       <Tabs
         screenOptions={{
           tabBarShowLabel: false, 
-          headerTitle: 'C-SEC',
+          headerTitle: () => <AnimatedHeaderLogo isDark={isDark} />, 
           headerTitleAlign: 'left',
-          headerTitleStyle: {
-            fontWeight: 'bold',
-            fontSize: 22,
-            letterSpacing: 1,
-            color: headerTextColor, // Dynamic Header Text
-          },
           headerStyle: {
             backgroundColor: headerBgColor, // Dynamic Header Background
             elevation: 2,
@@ -131,6 +158,13 @@ export default function TabLayout() {
 }
 
 const styles = StyleSheet.create({
+  // --- HEADER LOGO STYLES ---
+  headerLogoText: {
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: 2,
+  },
+
   tabItem: {
     alignItems: 'center',
     justifyContent: 'center',

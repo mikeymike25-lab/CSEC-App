@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   StyleSheet, 
   Text, 
@@ -6,14 +6,14 @@ import {
   TextInput, 
   TouchableOpacity, 
   SafeAreaView, 
-  Image,
   Modal,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
   Alert,
   ActivityIndicator,
-  StatusBar
+  StatusBar,
+  Animated
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons'; 
 import { useRouter } from 'expo-router'; 
@@ -25,6 +25,57 @@ import { auth, db } from '../firebaseConfig';
 
 // --- THEME CONTEXT ---
 import { useTheme } from '../context/ThemeContext';
+
+// --- CUSTOM ANIMATED TECH LOGO ---
+const AnimatedTechLogo = ({ isDark }: { isDark: boolean }) => {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(20)).current;
+  const cursorOpacity = useRef(new Animated.Value(1)).current; // <-- Hardware animated cursor
+
+  useEffect(() => {
+    // 1. Smooth fade-in and slide-up boot sequence
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 1000,
+        useNativeDriver: true,
+      }),
+      Animated.timing(translateY, {
+        toValue: 0,
+        duration: 1000,
+        useNativeDriver: true,
+      })
+    ]).start();
+
+    // 2. Hardware-Accelerated Terminal Blink
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(cursorOpacity, {
+          toValue: 0,
+          duration: 100, // Quick fade out
+          useNativeDriver: true,
+        }),
+        Animated.delay(400), // Pause
+        Animated.timing(cursorOpacity, {
+          toValue: 1,
+          duration: 100, // Quick fade in
+          useNativeDriver: true,
+        }),
+        Animated.delay(400) // Pause
+      ])
+    ).start();
+    
+  }, [fadeAnim, translateY, cursorOpacity]);
+
+  return (
+    <Animated.View style={[styles.animatedLogoContainer, { opacity: fadeAnim, transform: [{ translateY }] }]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <Text style={[styles.logoMainText, { color: isDark ? '#FFFFFF' : '#1E3246' }]}>CSEC</Text>
+        <Animated.Text style={[styles.logoMainText, { color: isDark ? '#4DA8DA' : '#2D4356', opacity: cursorOpacity }]}>_</Animated.Text>
+      </View>
+    </Animated.View>
+  );
+};
 
 export default function SignupScreen() {
   const router = useRouter(); 
@@ -142,11 +193,8 @@ export default function SignupScreen() {
             <Ionicons name="arrow-back" size={28} color={isDark ? '#4DA8DA' : '#2D4356'} />
           </TouchableOpacity>
 
-          <Image 
-            source={require('../assets/images/C-SECLOGO.png')} 
-            style={styles.logoImage}
-            resizeMode="contain" 
-          />
+          {/* EXACT MATCH OF THE LOGIN SCREEN LOGO */}
+          <AnimatedTechLogo isDark={isDark} />
 
           {/* Input: Name */}
           <View style={styles.inputContainer}>
@@ -254,9 +302,11 @@ export default function SignupScreen() {
             <View style={styles.termsTextContainer}>
               <Text style={[styles.termsText, { color: textColor }]}>I have read and agree to the </Text>
               <TouchableOpacity onPress={() => setModalVisible(true)} disabled={isLoading}>
-                <Text style={styles.termsLink}>Terms and Conditions</Text>
+                <Text style={styles.termsLink}>Terms and Conditions </Text>
               </TouchableOpacity>
-              <Text style={[styles.termsText, { color: textColor }]}> and Privacy Policy</Text>
+              <TouchableOpacity onPress={() => setModalVisible(true)} disabled={isLoading}>
+              <Text style={[styles.termsLink]}>and Privacy Policy</Text>
+              </TouchableOpacity>
             </View>
           </View>
           {errors.terms ? <Text style={[styles.errorText, { marginBottom: 15 }]}>{errors.terms}</Text> : null}
@@ -295,12 +345,24 @@ export default function SignupScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalContent}>
+            <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={true}>
               <Text style={[styles.modalBodyText, { color: isDark ? '#A9B4C0' : '#333' }]}>
-                Terms and Conditions for CSEC{'\n'}
-                Last Updated: March 30, 2026{'\n\n'}
-                Acceptance of Terms:{'\n'}
-                By creating an account, you agree to be bound by these Terms and Conditions...
+                <Text style={{fontWeight: 'bold', fontSize: 16}}>Welcome to C-SEC Sentinel.</Text>{'\n\n'}
+                
+                <Text style={{fontWeight: 'bold'}}>1. Acceptance of Terms</Text>{'\n'}
+                By creating an account and accessing the C-SEC Sentinel application, you agree to be bound by these Terms and Conditions and our Privacy Policy. If you do not agree to these terms, please do not use our services.{'\n\n'}
+                
+                <Text style={{fontWeight: 'bold'}}>2. Description of Service</Text>{'\n'}
+                C-SEC Sentinel provides heuristic URL analysis, threat detection, and risk assessment tools. The service is provided "as is" and relies on AI models and threat intelligence databases that may not guarantee 100% accuracy.{'\n\n'}
+                
+                <Text style={{fontWeight: 'bold'}}>3. User Privacy and Data Collection</Text>{'\n'}
+                We respect your privacy. In order to provide our security services, we process the URLs you submit for scanning. We employ zero-trust principles and do not sell your personal data to third parties. Account authentication data is securely handled via Firebase protocols.{'\n\n'}
+                
+                <Text style={{fontWeight: 'bold'}}>4. Acceptable Use</Text>{'\n'}
+                You agree to use C-SEC Sentinel only for lawful security verification purposes. You may not use this application to facilitate malicious activities, reverse-engineer our AI models, attempt to bypass access controls, or overwhelm our backend servers.{'\n\n'}
+                
+                <Text style={{fontWeight: 'bold'}}>5. Limitation of Liability</Text>{'\n'}
+                C-SEC Sentinel, its developers, and affiliated institutions shall not be held liable for any damages, data loss, or security breaches resulting from the use or inability to use this application. Users remain solely responsible for their own cybersecurity practices and decisions.
               </Text>
             </ScrollView>
 
@@ -323,7 +385,16 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollContainer: { flexGrow: 1, alignItems: 'center', paddingHorizontal: 30, paddingTop: 60, paddingBottom: 40 },
   backButton: { position: 'absolute', top: 50, left: 20, padding: 10, zIndex: 10 },
-  logoImage: { width: 350, height: 180, marginTop: 20 },
+  
+  // --- EXACT LOGO STYLES MATCHING LOGIN SCREEN ---
+  animatedLogoContainer: { alignItems: 'center', marginBottom: 50, marginTop: 10 },
+  logoMainText: { 
+    fontSize: 48, 
+    fontWeight: '900', 
+    letterSpacing: 4,
+    marginTop: 70,
+  },
+
   inputContainer: { width: '100%', marginBottom: 15 },
   input: {
     height: 55, borderRadius: 30, paddingHorizontal: 25, fontSize: 15,
@@ -348,11 +419,11 @@ const styles = StyleSheet.create({
   signupButton: { backgroundColor: '#2D4356', width: '100%', height: 55, borderRadius: 30, justifyContent: 'center', alignItems: 'center', marginTop: 20 },
   signupButtonText: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.7)', justifyContent: 'center', alignItems: 'center' },
-  modalCard: { width: '85%', height: '70%', borderRadius: 25, overflow: 'hidden' },
+  modalCard: { width: '85%', height: '75%', borderRadius: 25, overflow: 'hidden' }, 
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20 },
   modalTitle: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
   modalContent: { padding: 20 },
-  modalBodyText: { fontSize: 13, lineHeight: 22 },
+  modalBodyText: { fontSize: 13, lineHeight: 22, paddingBottom: 20 }, 
   modalAcceptButton: { margin: 20, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center' },
   modalAcceptButtonText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' }
 });

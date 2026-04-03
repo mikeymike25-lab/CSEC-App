@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   StyleSheet, 
   Text, 
@@ -6,12 +6,12 @@ import {
   TextInput, 
   TouchableOpacity, 
   SafeAreaView, 
-  Image,
   StatusBar,
   TouchableWithoutFeedback,
   Keyboard,
   Alert,
-  ActivityIndicator
+  ActivityIndicator,
+  Animated
 } from 'react-native';
 import { Ionicons, FontAwesome } from '@expo/vector-icons'; 
 import { useRouter } from 'expo-router'; 
@@ -22,6 +22,57 @@ import { signInWithEmailAndPassword } from 'firebase/auth';
 
 // --- THEME CONTEXT ---
 import { useTheme } from '../context/ThemeContext';
+
+// --- CUSTOM ANIMATED TECH LOGO ---
+const AnimatedTechLogo = ({ isDark }: { isDark: boolean }) => {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(20)).current;
+  const cursorOpacity = useRef(new Animated.Value(1)).current; // <-- NEW: Hardware animated cursor
+
+  useEffect(() => {
+    // 1. Smooth fade-in and slide-up boot sequence
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 1000,
+        useNativeDriver: true,
+      }),
+      Animated.timing(translateY, {
+        toValue: 0,
+        duration: 1000,
+        useNativeDriver: true,
+      })
+    ]).start();
+
+    // 2. Hardware-Accelerated Terminal Blink
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(cursorOpacity, {
+          toValue: 0,
+          duration: 100, // Quick fade out
+          useNativeDriver: true,
+        }),
+        Animated.delay(400), // Pause
+        Animated.timing(cursorOpacity, {
+          toValue: 1,
+          duration: 100, // Quick fade in
+          useNativeDriver: true,
+        }),
+        Animated.delay(400) // Pause
+      ])
+    ).start();
+    
+  }, [fadeAnim, translateY, cursorOpacity]);
+
+  return (
+    <Animated.View style={[styles.animatedLogoContainer, { opacity: fadeAnim, transform: [{ translateY }] }]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <Text style={[styles.logoMainText, { color: isDark ? '#FFFFFF' : '#1E3246' }]}>CSEC</Text>
+        <Animated.Text style={[styles.logoMainText, { color: isDark ? '#4DA8DA' : '#2D4356', opacity: cursorOpacity }]}>_</Animated.Text>
+      </View>
+    </Animated.View>
+  );
+};
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -87,11 +138,8 @@ export default function LoginScreen() {
         
         <View style={styles.innerContainer}>
           
-          <Image 
-            source={require('../assets/images/C-SECLOGO.png')} 
-            style={styles.logoImage}
-            resizeMode="contain" 
-          />
+          {/* REPLACED STATIC IMAGE WITH ANIMATED TECH LOGO */}
+          <AnimatedTechLogo isDark={isDark} />
           
           {/* Error Message Display */}
           {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
@@ -175,8 +223,12 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   innerContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 30 },
+  
+  // --- NEW LOGO STYLES ---
+  animatedLogoContainer: { alignItems: 'center', marginBottom: 50, marginTop: 10 },
+  logoMainText: { fontSize: 48, fontWeight: '900', letterSpacing: 4 },
+  
   errorText: { color: '#cd382a', marginBottom: 10, textAlign: 'center', fontWeight: 'bold' },
-  logoImage: { width: 400, height: 200, marginBottom: 20 },
   inputContainer: { width: '100%', marginBottom: 20 },
   input: {
     height: 55, borderRadius: 30, paddingHorizontal: 25,
@@ -196,7 +248,6 @@ const styles = StyleSheet.create({
   },
   loginButtonText: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
   signupContainer: { flexDirection: 'row', marginTop: 20 },
-  // FIXED: Added signupText back to the stylesheet
   signupText: { fontSize: 14 },
   signupLink: { color: '#4169E1', fontWeight: '600' },
   divider: { width: '80%', height: 1, marginTop: 40, marginBottom: 30 },
