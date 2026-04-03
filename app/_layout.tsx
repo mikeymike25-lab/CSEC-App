@@ -6,8 +6,9 @@ import * as SplashScreen from 'expo-splash-screen';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from '../firebaseConfig'; 
 
-// --- ADD THIS IMPORT ---
+// Context & Components
 import { ThemeProvider } from '../context/ThemeContext';
+import LinkInterceptor from '../components/LinkInterceptor'; // <-- ADDED THIS IMPORT
 
 // 1. Tell the splash screen to stay visible until we are ready
 SplashScreen.preventAutoHideAsync();
@@ -53,15 +54,20 @@ export default function RootLayout() {
     return null; 
   }
 
-  // --- REPLACE YOUR OLD RETURN WITH THIS ---
+  // 4. Render the App with Theme, Navigation, and Global Interceptor
   return (
     <ThemeProvider>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="index" /> 
-        <Stack.Screen name="signup" />
-        <Stack.Screen name="tabs" />
-        <Stack.Screen name="appearance" /> 
-      </Stack>
+      <>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="index" /> 
+          <Stack.Screen name="signup" />
+          <Stack.Screen name="tabs" />
+          <Stack.Screen name="appearance" /> 
+        </Stack>
+
+        {/* The Interceptor stays mounted globally to catch links anywhere */}
+        <LinkInterceptor />
+      </>
     </ThemeProvider>
   );
 }
