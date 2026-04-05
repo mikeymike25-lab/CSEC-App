@@ -66,9 +66,15 @@ export default function HistoryScreen() {
     loadHistory().then(() => setRefreshing(false));
   }, []);
 
+  // --- THE FIX: Filter by Verdict instead of Protocol ---
   const filteredData = activeFilter === 'All' 
     ? historyData 
-    : historyData.filter(item => item.protocol?.includes(activeFilter));
+    : historyData.filter(item => {
+        if (activeFilter === 'Whitelist') return item.verdict === 'Safe';
+        if (activeFilter === 'Blacklist') return item.verdict === 'Phishing';
+        if (activeFilter === 'Greylist') return item.verdict === 'Suspicious';
+        return true;
+      });
 
   const getVerdictColor = (verdict?: string) => {
     if (verdict === 'Phishing') return redAccent;
@@ -180,7 +186,6 @@ export default function HistoryScreen() {
 
         <View style={styles.paddedSection}>
           
-          {/* --- REPLACED VAULT SECTION WITH ARCHITECTURE SUMMARY --- */}
           <View style={[styles.engineCard, { backgroundColor: isDark ? '#1A242E' : '#2D4356', borderWidth: isDark ? 1 : 0, borderColor: '#2D4356' }]}>
             <View style={[styles.engineIconBox, { backgroundColor: isDark ? '#2D4356' : '#3B5266' }]}>
               <MaterialCommunityIcons name="brain" size={24} color="#A9B4C0" />
@@ -218,7 +223,6 @@ export default function HistoryScreen() {
       <Modal visible={isModalVisible} transparent={true} animationType="fade" onRequestClose={handleCloseModal}>
         <View style={styles.modalOverlay}>
           
-          {/* Background Touch Overlay */}
           <TouchableOpacity 
             style={StyleSheet.absoluteFill} 
             activeOpacity={1} 
@@ -295,7 +299,6 @@ export default function HistoryScreen() {
                       <View style={styles.metricsRow}>
                         <View style={[styles.metricBadge, { backgroundColor: isDark ? '#233240' : '#E8EDF2' }]}>
                           <Text style={[styles.metricLabel, { color: textColorSecondary }]}>RF MODEL F1 SCORE</Text>
-                          {/* Updated to 95% to accurately reflect the Jupyter Notebook report */}
                           <Text style={[styles.metricValue, { color: textColorPrimary }]}>95%</Text>
                         </View>
                         <View style={[styles.metricBadge, { backgroundColor: isDark ? '#233240' : '#E8EDF2' }]}>
@@ -345,7 +348,6 @@ const styles = StyleSheet.create({
   viewDetailsIcon: { width: 24, alignItems: 'flex-end', justifyContent: 'center' },
   emptyStateContainer: { padding: 40, alignItems: 'center', justifyContent: 'center' },
 
-  // Renamed vault styles to engine styles
   engineCard: { borderRadius: 30, padding: 30, marginBottom: 20 },
   engineIconBox: { width: 50, height: 50, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
   engineTitle: { color: '#FFFFFF', fontSize: 22, fontWeight: 'bold', marginBottom: 12, letterSpacing: -0.5 },

@@ -2,37 +2,81 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, useColorScheme, View } from 'react-native';
 
-export type FlagType = 'scanning' | 'safe' | 'warning' | 'danger';
+export type FlagType = 'scanning' | 'safe' | 'warning' | 'danger' | 'unverified';
 
 interface FlagProps {
   type: FlagType;
   url: string;
-  onProceed: () => void;       // Action to actually open the link
-  onClose: () => void;         // Action to close/dismiss the modal
-  onViewDetails: () => void;   // Action to route into the C-SEC app details
+  isCached?: boolean;          // NEW
+  protocol?: string;           // NEW
+  onProceed: () => void;
+  onClose: () => void;
+  onViewDetails: () => void;
 }
 
-export const FlagContent: React.FC<FlagProps> = ({ type, onProceed, onClose, onViewDetails }) => {
+export const FlagContent: React.FC<FlagProps> = ({ type, url, isCached, protocol, onProceed, onClose, onViewDetails }) => {
   const isDarkMode = useColorScheme() === 'dark';
 
-  // Dynamic Theme Colors
   const theme = {
-    cardBg: isDarkMode ? '#1E293B' : '#FFFFFF',           // Dark slate vs White
-    titleText: isDarkMode ? '#F8FAFC' : '#1E293B',        // Off-white vs Dark slate
-    descText: isDarkMode ? '#CBD5E1' : '#475569',         // Light grey vs Dark grey
-    boxBg: isDarkMode ? '#334155' : '#F8F6F4',            // Slate vs Warm off-white
-    secondaryBtnBg: isDarkMode ? '#334155' : '#EAE8E3',   // Slate vs Beige
-    secondaryBtnText: isDarkMode ? '#F8FAFC' : '#1E293B', // Off-white vs Dark slate
-    tertiaryText: isDarkMode ? '#94A3B8' : '#64748B',     // Medium grey for both
+    cardBg: isDarkMode ? '#1E293B' : '#FFFFFF',          
+    titleText: isDarkMode ? '#F8FAFC' : '#1E293B',        
+    descText: isDarkMode ? '#CBD5E1' : '#475569',         
+    boxBg: isDarkMode ? '#334155' : '#F8F6F4',            
+    secondaryBtnBg: isDarkMode ? '#334155' : '#EAE8E3',   
+    secondaryBtnText: isDarkMode ? '#F8FAFC' : '#1E293B', 
+    tertiaryText: isDarkMode ? '#94A3B8' : '#64748B',     
   };
 
-  // Render the "Scanning" state while the model runs
+  // Helper functions to generate dynamic text based on Cache/List Filtering
+  const getTitleText = () => {
+    if (isCached) {
+      if (type === 'danger') return 'Known Threat (Cached)';
+      if (type === 'warning') return 'Known Risk (Cached)';
+      return 'Verified Safe (Cached)';
+    }
+    if (type === 'danger') return protocol?.includes('Blacklist') ? 'Blacklisted Threat' : 'Threat Blocked';
+    if (type === 'warning') return 'Caution Required';
+    if (type === 'safe') return protocol?.includes('Whitelist') ? 'Trusted Platform' : 'Safe to Visit';
+    return '';
+  };
+
+  const getLabelText = () => {
+    if (isCached) return 'LOCAL CACHE MATCH';
+    if (protocol?.includes('Blacklist')) return 'GLOBAL BLACKLIST';
+    if (protocol?.includes('Whitelist')) return 'TRUSTED WHITELIST';
+    return 'AI VERDICT';
+  };
+
   if (type === 'scanning') {
     return (
       <View style={[styles.card, { backgroundColor: theme.cardBg }]}>
         <ActivityIndicator size="large" color={isDarkMode ? '#38BDF8' : '#2A3B4C'} style={{ marginBottom: 20 }} />
         <Text style={[styles.title, { color: theme.titleText }]}>Analyzing Link...</Text>
-        <Text style={[styles.verdictDesc, { color: theme.descText }]}>C-SEC Random Forest model is scanning for threats.</Text>
+        <Text style={[styles.verdictDesc, { color: theme.descText, textAlign: 'center' }]}>C-SEC Engine is scanning for threats.</Text>
+      </View>
+    );
+  }
+
+  if (type === 'unverified') {
+    return (
+      <View style={[styles.card, { backgroundColor: theme.cardBg }]}>
+        <View style={styles.iconContainer}>
+          <View style={[styles.iconCircle, { backgroundColor: '#EF4444' }]}>
+            <MaterialCommunityIcons name="shield-lock-outline" size={32} color="white" />
+          </View>
+        </View>
+        <Text style={[styles.title, { color: theme.titleText }]}>Verification Required</Text>
+        <Text style={[styles.verdictDesc, { color: theme.descText, textAlign: 'center', marginBottom: 20 }]}>
+          Your account must be verified to perform heuristic URL scanning. Please verify your email to unlock link interception.
+        </Text>
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity style={styles.primaryBtn} onPress={onViewDetails}>
+            <Text style={styles.primaryBtnText}>OPEN APP TO VERIFY</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.tertiaryBtn} onPress={onClose}>
+            <Text style={[styles.tertiaryBtnText, { color: theme.tertiaryText }]}>CLOSE & IGNORE</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
@@ -40,7 +84,6 @@ export const FlagContent: React.FC<FlagProps> = ({ type, onProceed, onClose, onV
   return (
     <View style={[styles.card, { backgroundColor: theme.cardBg }]}>
       
-      {/* 1. DYNAMIC HEADER ICON */}
       <View style={styles.iconContainer}>
         {type === 'safe' && (
           <View style={[styles.iconCircle, { backgroundColor: '#22C55E' }]}>
@@ -64,9 +107,9 @@ export const FlagContent: React.FC<FlagProps> = ({ type, onProceed, onClose, onV
         )}
       </View>
 
-      {/* 2. DYNAMIC TITLE & CRITICAL BADGE */}
-      <Text style={[styles.title, { color: theme.titleText }]}>
-        {type === 'safe' ? 'Safe to Visit' : type === 'warning' ? 'Caution Required' : 'Threat Blocked'}
+      {/* DYNAMIC TITLE (Cached, List, or AI) */}
+      <Text style={[styles.title, { color: theme.titleText, textAlign: 'center' }]}>
+        {getTitleText()}
       </Text>
       
       {type === 'danger' && (
@@ -76,35 +119,37 @@ export const FlagContent: React.FC<FlagProps> = ({ type, onProceed, onClose, onV
         </View>
       )}
 
-      {/* 3. AI VERDICT BOX */}
       <View style={[styles.verdictBox, { backgroundColor: theme.boxBg }]}>
         <View style={styles.verdictHeader}>
           {type === 'safe' && <Ionicons name="shield-checkmark" size={16} color="#22C55E" />}
           {type === 'warning' && <MaterialCommunityIcons name="robot-outline" size={18} color="#F59E0B" />}
-          {type === 'danger' && (
+          
+          {type === 'danger' ? (
             <View style={styles.dangerVerdictLabel}>
-              <Text style={styles.dangerVerdictLabelText}>AI VERDICT</Text>
+              <Text style={styles.dangerVerdictLabelText}>{getLabelText()}</Text>
             </View>
+          ) : (
+            <Text style={[styles.verdictLabel, { color: theme.tertiaryText }]}>{getLabelText()}</Text>
           )}
-          {type !== 'danger' && <Text style={[styles.verdictLabel, { color: theme.tertiaryText }]}>AI VERDICT</Text>}
         </View>
         
+        {/* DYNAMIC DESCRIPTIONS BASED ON PROTOCOL */}
         <Text style={[styles.verdictDesc, { color: theme.descText }]}>
-          {type === 'safe' && 'This link matches known secure patterns.'}
-          {type === 'warning' && 'This link shows unusual redirect patterns. It may be attempting to harvest credentials through a mirrored interface.'}
+          {type === 'safe' && (
+            protocol?.includes('Whitelist') 
+            ? 'This is a safe, verified website recognized by our Trusted Platform list.' 
+            : 'This link matches known secure patterns based on structural analysis.'
+          )}
+          {type === 'warning' && 'This link shows unusual redirect patterns and falls into the heuristic greylist.'}
           {type === 'danger' && (
-            <Text>
-              <Text style={{ fontWeight: 'bold', color: theme.titleText }}>High probability of phishing detected. </Text>
-              The URL structure mimics a financial institution but points to an unauthorized server in an untrusted jurisdiction.
-            </Text>
+            protocol?.includes('Blacklist')
+            ? 'This URL is found in our Global Blacklist Database of known malicious actors.'
+            : <Text><Text style={{ fontWeight: 'bold', color: theme.titleText }}>High probability of phishing. </Text>The URL structure mimics a financial institution but points to an unauthorized server.</Text>
           )}
         </Text>
       </View>
 
-      {/* 4. DYNAMIC BUTTONS */}
       <View style={styles.buttonContainer}>
-        
-        {/* SAFE BUTTONS */}
         {type === 'safe' && (
           <>
             <TouchableOpacity style={styles.primaryBtn} onPress={onProceed}>
@@ -120,7 +165,6 @@ export const FlagContent: React.FC<FlagProps> = ({ type, onProceed, onClose, onV
           </>
         )}
 
-        {/* WARNING BUTTONS */}
         {type === 'warning' && (
           <>
             <TouchableOpacity style={styles.primaryBtn} onPress={onViewDetails}>
@@ -135,7 +179,6 @@ export const FlagContent: React.FC<FlagProps> = ({ type, onProceed, onClose, onV
           </>
         )}
 
-        {/* DANGER BUTTONS */}
         {type === 'danger' && (
           <>
             <TouchableOpacity style={styles.primaryBtn} onPress={onViewDetails}>
@@ -152,147 +195,27 @@ export const FlagContent: React.FC<FlagProps> = ({ type, onProceed, onClose, onV
 };
 
 const styles = StyleSheet.create({
-  card: {
-    borderRadius: 32,
-    padding: 24,
-    alignItems: 'center',
-    width: '90%',
-    maxWidth: 400,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  iconContainer: {
-    marginBottom: 16,
-    marginTop: 10,
-  },
-  iconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  dangerIconWrapper: {
-    position: 'relative',
-  },
-  dangerBadgeIndicator: {
-    position: 'absolute',
-    top: -5,
-    right: -5,
-    backgroundColor: '#EF4444',
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFF',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '800',
-    marginBottom: 16,
-  },
-  criticalAlertBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FEE2E2',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    marginBottom: 16,
-    marginTop: -8,
-  },
-  criticalAlertText: {
-    color: '#EF4444',
-    fontSize: 10,
-    fontWeight: 'bold',
-    marginLeft: 4,
-    letterSpacing: 0.5,
-  },
-  verdictBox: {
-    borderRadius: 20,
-    padding: 20,
-    width: '100%',
-    marginBottom: 24,
-  },
-  verdictHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  verdictLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    marginLeft: 6,
-    letterSpacing: 0.5,
-  },
-  dangerVerdictLabel: {
-    backgroundColor: '#EF4444',
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    marginBottom: 4,
-  },
-  dangerVerdictLabelText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
-  },
-  verdictDesc: {
-    fontSize: 14,
-    lineHeight: 22,
-  },
-  buttonContainer: {
-    width: '100%',
-    gap: 12, 
-  },
-  primaryBtn: {
-    backgroundColor: '#2A3B4C', 
-    paddingVertical: 16,
-    borderRadius: 24,
-    alignItems: 'center',
-    width: '100%',
-  },
-  primaryBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 14,
-    letterSpacing: 0.5,
-  },
-  secondaryBtn: {
-    paddingVertical: 16,
-    borderRadius: 24,
-    alignItems: 'center',
-    width: '100%',
-  },
-  secondaryBtnText: {
-    fontWeight: '700',
-    fontSize: 14,
-    letterSpacing: 0.5,
-  },
-  tertiaryBtn: {
-    paddingVertical: 12,
-    alignItems: 'center',
-    width: '100%',
-  },
-  tertiaryBtnText: {
-    fontWeight: '700',
-    fontSize: 13,
-    letterSpacing: 0.5,
-  },
-  footerRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  footerText: {
-    fontSize: 10,
-    marginLeft: 4,
-  }
+  card: { borderRadius: 32, padding: 24, alignItems: 'center', width: '90%', maxWidth: 400, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.15, shadowRadius: 20, elevation: 10 },
+  iconContainer: { marginBottom: 16, marginTop: 10 },
+  iconCircle: { width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center' },
+  dangerIconWrapper: { position: 'relative' },
+  dangerBadgeIndicator: { position: 'absolute', top: -5, right: -5, backgroundColor: '#EF4444', width: 20, height: 20, borderRadius: 10, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#FFF' },
+  title: { fontSize: 24, fontWeight: '800', marginBottom: 16 },
+  criticalAlertBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FEE2E2', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 16, marginBottom: 16, marginTop: -8 },
+  criticalAlertText: { color: '#EF4444', fontSize: 10, fontWeight: 'bold', marginLeft: 4, letterSpacing: 0.5 },
+  verdictBox: { borderRadius: 20, padding: 20, width: '100%', marginBottom: 24 },
+  verdictHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  verdictLabel: { fontSize: 12, fontWeight: '700', marginLeft: 6, letterSpacing: 0.5, textTransform: 'uppercase' },
+  dangerVerdictLabel: { backgroundColor: '#EF4444', paddingVertical: 4, paddingHorizontal: 10, borderRadius: 12, marginBottom: 4 },
+  dangerVerdictLabelText: { color: '#FFFFFF', fontSize: 10, fontWeight: 'bold', letterSpacing: 0.5, textTransform: 'uppercase' },
+  verdictDesc: { fontSize: 14, lineHeight: 22 },
+  buttonContainer: { width: '100%', gap: 12 },
+  primaryBtn: { backgroundColor: '#2A3B4C', paddingVertical: 16, borderRadius: 24, alignItems: 'center', width: '100%' },
+  primaryBtnText: { color: '#FFFFFF', fontWeight: '700', fontSize: 14, letterSpacing: 0.5 },
+  secondaryBtn: { paddingVertical: 16, borderRadius: 24, alignItems: 'center', width: '100%' },
+  secondaryBtnText: { fontWeight: '700', fontSize: 14, letterSpacing: 0.5 },
+  tertiaryBtn: { paddingVertical: 12, alignItems: 'center', width: '100%' },
+  tertiaryBtnText: { fontWeight: '700', fontSize: 13, letterSpacing: 0.5 },
+  footerRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 8 },
+  footerText: { fontSize: 10, marginLeft: 4 }
 });

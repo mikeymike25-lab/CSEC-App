@@ -2,10 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import React, { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
 import { Linking, Modal, StyleSheet, View } from 'react-native';
+import { getAuth } from 'firebase/auth'; 
 import { FlagContent, FlagType } from './FlagModals';
 
-// Matches your MSI laptop IP and the correct Flask route
-const API_URL = 'http://192.168.10.100:5000/analyze-link';
+const API_URL = 'https://scaling-fortnight-pjwxgqgjxjxrcr466-5000.app.github.dev/analyze-link';
 
 export interface LinkInterceptorRef {
   triggerTestScan: (testUrl: string, testType: FlagType) => void;
@@ -15,30 +15,50 @@ const LinkInterceptor = forwardRef<LinkInterceptorRef, {}>((props, ref) => {
   const [visible, setVisible] = useState(false);
   const [type, setType] = useState<FlagType>('scanning');
   const [url, setUrl] = useState('');
+  
+  // NEW STATES: Tracking cache and list-based filtering
+  const [isCached, setIsCached] = useState(false);
+  const [protocol, setProtocol] = useState('');
+  
   const router = useRouter();
 
   useImperativeHandle(ref, () => ({
     triggerTestScan: (testUrl: string, testType: FlagType) => {
       setUrl(testUrl);
       setType(testType);
+      setIsCached(false);
+      setProtocol('Test Mode');
       setVisible(true);
     }
   }));
 
-  // THE REAL SENTINEL ENGINE INTEGRATION (Synced with Manual Scan Logic)
-  const analyzeUrlWithCSEC = async (targetUrl: string) => {
+  // THE REAL SENTINEL ENGINE INTEGRATION
+  const analyzeUrlWithCSEC = async (targetUrl: string): Promise<{ type: FlagType, cached: boolean, proto: string }> => {
     try {
-      // --- FIX 2: GATE 0 LOCAL CACHE CHECK ---
-      // This prevents duplicate history entries if the user clicks the same link twice
+      // --- VERIFICATION LOCKDOWN ---
+      const auth = getAuth();
+      const user = auth.currentUser;
+
+      if (user && !user.emailVerified) {
+        await user.reload(); 
+        if (!user.emailVerified) {
+          return { type: 'unverified', cached: false, proto: 'Locked' };
+        }
+      }
+
+      // --- GATE 0: LOCAL CACHE CHECK ---
       const existingHistory = await AsyncStorage.getItem('csec_history');
       if (existingHistory) {
         const historyArray = JSON.parse(existingHistory);
         const cachedMatch = historyArray.find((item: any) => item.url.toLowerCase() === targetUrl.toLowerCase());
 
         if (cachedMatch) {
-          if (cachedMatch.verdict === 'Phishing') return 'danger';
-          if (cachedMatch.verdict === 'Suspicious') return 'warning';
-          return 'safe';
+          let cachedType: FlagType = 'safe';
+          if (cachedMatch.verdict === 'Phishing') cachedType = 'danger';
+          if (cachedMatch.verdict === 'Suspicious') cachedType = 'warning';
+          
+          // Return the cached flag!
+          return { type: cachedType, cached: true, proto: cachedMatch.protocol };
         }
       }
 
@@ -59,7 +79,6 @@ const LinkInterceptor = forwardRef<LinkInterceptorRef, {}>((props, ref) => {
       let currentVerdict = data.verdict; 
       let serverProtocol = data.protocol;
       
-      // --- CALCULATE TRUE PHISHING PROBABILITY (0% = Safe, 100% = Phishing) ---
       let rawConfidence = data.confidence || 0;
       let phishingProb = 0;
 
@@ -82,20 +101,17 @@ const LinkInterceptor = forwardRef<LinkInterceptorRef, {}>((props, ref) => {
       // --- STRICT 40-60 GREYLIST LOGIC ---
       if (serverProtocol.includes('AI')) {
         if (phishingProb >= 40 && phishingProb <= 60) {
-          // 40% to 60%: The true Greylist
           currentVerdict = 'Suspicious';
           currentProtocol = 'Heuristic Greylist';
           currentSummary = "AI analysis is inconclusive. This link has features of both safe and malicious sites. Proceed with caution.";
-          currentTech = `Uncertain classification. The Random Forest returned a ${currentConfidence}% anomaly score, placing it in the heuristic grey zone.`;
+          currentTech = `Uncertain classification. The Random Forest returned a ${currentConfidence}% anomaly score.`;
           uiType = 'warning';
         } else if (currentVerdict === 'Phishing') {
-          // 61% to 100%: Confident Phishing
           currentProtocol = 'AI RF Analysis'; 
           currentSummary = "This website exhibits malicious characteristics and is likely attempting to steal credentials or data.";
           currentTech = "Threat verdict. Lexical analysis flagged suspicious structural anomalies and abnormal character distribution.";
           uiType = 'danger';
         } else {
-          // 0% to 39%: Confident Safe
           currentProtocol = 'AI RF Analysis'; 
           currentSummary = "This is a safe, verified website based on current heuristic analysis.";
           currentTech = "Safe verdict. Lexical analysis found normal character distribution, optimal length, and standard pathing.";
@@ -113,7 +129,7 @@ const LinkInterceptor = forwardRef<LinkInterceptorRef, {}>((props, ref) => {
         uiType = 'safe';
       }
 
-      // Save the exact same data as the manual scan
+      // Save to history only if it wasn't cached
       await saveToHistory({ 
         url: targetUrl,
         verdict: currentVerdict, 
@@ -123,24 +139,26 @@ const LinkInterceptor = forwardRef<LinkInterceptorRef, {}>((props, ref) => {
         technicalDetails: currentTech 
       });
 
-      return uiType;
+      return { type: uiType, cached: false, proto: currentProtocol };
 
     } catch (error) {
       console.error("Engine Error:", error);
-      return 'warning'; // Fallback if server is offline
+      return { type: 'warning', cached: false, proto: 'Offline Fallback' };
     }
   };
 
   useEffect(() => {
     const handleIncomingLink = async (incomingUrl: string | null) => {
-      if (!incomingUrl || incomingUrl.startsWith('csec://')) return;
+      if (!incomingUrl || incomingUrl.startsWith('csec://') || incomingUrl.startsWith('exp://')) return;
 
       setUrl(incomingUrl);
       setType('scanning');
       setVisible(true);
 
       const result = await analyzeUrlWithCSEC(incomingUrl);
-      setType(result); 
+      setType(result.type); 
+      setIsCached(result.cached);   // Update Cache State
+      setProtocol(result.proto);    // Update Protocol State
     };
 
     const checkInitialUrl = async () => {
@@ -156,7 +174,6 @@ const LinkInterceptor = forwardRef<LinkInterceptorRef, {}>((props, ref) => {
     return () => subscription.remove();
   }, []);
 
-  // --- FIX 1: Robust Unique ID Generation ---
   const saveToHistory = async (resultData: any) => {
     try {
       const existingData = await AsyncStorage.getItem('csec_history');
@@ -195,6 +212,8 @@ const LinkInterceptor = forwardRef<LinkInterceptorRef, {}>((props, ref) => {
         <FlagContent 
           type={type}
           url={url}
+          isCached={isCached}   // Pass down cache status
+          protocol={protocol}   // Pass down protocol
           onProceed={() => {
             setVisible(false);
             Linking.openURL(url);
@@ -211,12 +230,7 @@ const LinkInterceptor = forwardRef<LinkInterceptorRef, {}>((props, ref) => {
 });
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)', 
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  overlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.75)', justifyContent: 'center', alignItems: 'center' },
 });
 
 export default LinkInterceptor;

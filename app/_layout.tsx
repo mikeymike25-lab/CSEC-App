@@ -42,24 +42,33 @@ export default function RootLayout() {
 
   // 3. Handle Safe Routing
   useEffect(() => {
+    // Wait until everything is ready
     if (!isFirebaseReady || !isAnimationDone) return; 
 
     // Once both are done, hide the native splash screen underneath
     SplashScreen.hideAsync();
 
-    // Prevent routing loops by checking if we are already in the right place
-    const inAuthGroup = segments[0] === 'tabs';
+    // --- THE FIX: Define screens that are ONLY for logged-out users ---
+    const publicScreens = ['index', 'signup']; 
+    
+    // Safely grab the current route folder
+    const currentRoute = segments[0] || 'index'; 
+    const isTryingToAccessPublic = publicScreens.includes(currentRoute);
 
-    if (user && !inAuthGroup) {
+    if (user && isTryingToAccessPublic) {
+      // User is logged in but trying to view Login/Signup? Send to tabs.
       router.replace('/tabs');
-    } else if (!user && inAuthGroup) {
+    } else if (!user && !isTryingToAccessPublic) {
+      // User is NOT logged in but trying to access tabs/appearance? Send to login.
       router.replace('/');
     }
+    // Notice: If user is logged in and goes to 'appearance', it completely ignores this 
+    // block and lets them pass!
+
   }, [user, isFirebaseReady, isAnimationDone, segments]);
 
   return (
     <ThemeProvider>
-      {/* ⚠️ CRITICAL: The Stack MUST always be rendered in Expo Router */}
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" /> 
         <Stack.Screen name="signup" />
@@ -69,9 +78,8 @@ export default function RootLayout() {
       
       <LinkInterceptor />
 
-      {/* 🎯 THE FIX: Render the Custom Splash Screen ON TOP of the app as an overlay */}
       {(!isAnimationDone || !isFirebaseReady) && (
-        <View style={[StyleSheet.absoluteFill, { zIndex: 999, elevation: 999 }]}>
+        <View style={[StyleSheet.absoluteFill, { zIndex: 999, elevation: 999, backgroundColor: '#F9F7E8' }]}>
           <AnimatedSplash />
         </View>
       )}
