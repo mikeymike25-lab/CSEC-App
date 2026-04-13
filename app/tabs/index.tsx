@@ -7,7 +7,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 
 // --- FIREBASE IMPORTS ---
 import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '../../firebaseConfig';
+import { auth, db } from '../../firebaseConfig'; // <-- Added auth here
 
 // --- TUNE INTO THE RADIO TOWER ---
 import { useTheme } from '../../context/ThemeContext';
@@ -22,6 +22,10 @@ export default function DashboardScreen() {
   
   // State for the Global Broadcast
   const [broadcastMessage, setBroadcastMessage] = useState<string | null>(null);
+  const [broadcastTime, setBroadcastTime] = useState<string | null>(null);
+
+  // State for Greeting
+  const [userName, setUserName] = useState('Agent'); // Default fallback
 
   // Define dynamic colors
   const bgColor = isDark ? '#121A21' : '#F9F7E8';
@@ -42,6 +46,23 @@ export default function DashboardScreen() {
     if (verdict === 'Suspicious') return yellowAccent;
     return greenAccent;
   };
+
+  // Helper for dynamic greeting
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning,';
+    if (hour < 18) return 'Good Afternoon,';
+    return 'Good Evening,';
+  };
+
+  // Fetch user's first name on load
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (user?.displayName) {
+      // Split the full name by space and take the first word
+      setUserName(user.displayName.split(' ')[0]); 
+    }
+  }, []);
 
   // 1. Fetch data from AsyncStorage whenever the Dashboard becomes active
   useFocusEffect(
@@ -72,6 +93,21 @@ export default function DashboardScreen() {
         
         if (data.activeBroadcast && data.activeBroadcast.trim() !== '') {
           setBroadcastMessage(data.activeBroadcast);
+
+          // Extract and format the timestamp
+          if (data.updatedAt) {
+            try {
+              // Handle both Firestore Timestamp (.toDate()) and ISO string formats
+              const dateObj = data.updatedAt.toDate ? data.updatedAt.toDate() : new Date(data.updatedAt);
+              setBroadcastTime(dateObj.toLocaleString('en-US', {
+                month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+              }));
+            } catch (error) {
+              setBroadcastTime(null);
+            }
+          } else {
+            setBroadcastTime(null);
+          }
 
           try {
             // --- THE FIX: Fetch the last broadcast this phone actually saw ---
@@ -104,6 +140,7 @@ export default function DashboardScreen() {
           }
         } else {
           setBroadcastMessage(null); 
+          setBroadcastTime(null);
         }
       }
     });
@@ -123,8 +160,13 @@ export default function DashboardScreen() {
           <Text style={[styles.badgeText, { color: textColorSecondary }]}>SENTINEL DEEP ENGINE ACTIVE</Text>
         </View>
 
-        {/* Title */}
-        <Text style={[styles.headerTitle, { color: textColorPrimary }]}>Security{'\n'}Command{'\n'}Center.</Text>
+        {/* --- DYNAMIC GREETING & TITLE --- */}
+        <View style={{ marginBottom: 24 }}>
+          <Text style={[styles.greetingText, { color: textColorSecondary }]}>
+            {getGreeting()} {userName}.
+          </Text>
+          <Text style={[styles.headerTitle, { color: textColorPrimary }]}>Security{'\n'}Command{'\n'}Center.</Text>
+        </View>
 
         {/* --- GLOBAL BROADCAST BANNER --- */}
         {broadcastMessage && (
@@ -137,8 +179,13 @@ export default function DashboardScreen() {
             }
           ]}>
             <View style={styles.broadcastHeader}>
-              <Ionicons name="megaphone" size={18} color={yellowAccent} />
-              <Text style={[styles.broadcastTitle, { color: yellowAccent }]}>SYSTEM BROADCAST</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Ionicons name="megaphone" size={18} color={yellowAccent} />
+                <Text style={[styles.broadcastTitle, { color: yellowAccent }]}>SYSTEM BROADCAST</Text>
+              </View>
+              {broadcastTime && (
+                <Text style={[styles.broadcastTime, { color: yellowAccent }]}>{broadcastTime}</Text>
+              )}
             </View>
             <Text style={[styles.broadcastText, { color: textColorPrimary }]}>
               {broadcastMessage}
@@ -295,12 +342,14 @@ const styles = StyleSheet.create({
   badgeDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
   badgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
   
-  headerTitle: { fontSize: 38, fontWeight: '900', lineHeight: 42, marginBottom: 24, letterSpacing: -0.5 },
+  greetingText: { fontSize: 16, fontWeight: '700', marginBottom: 4 },
+  headerTitle: { fontSize: 38, fontWeight: '900', lineHeight: 42, letterSpacing: -0.5 },
   
   // --- BROADCAST STYLES ---
   broadcastCard: { borderWidth: 1, borderLeftWidth: 4, borderRadius: 16, padding: 20, marginBottom: 32, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
-  broadcastHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  broadcastHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
   broadcastTitle: { fontSize: 12, fontWeight: '900', letterSpacing: 1.5, marginLeft: 8 },
+  broadcastTime: { fontSize: 10, fontWeight: '700', opacity: 0.8 },
   broadcastText: { fontSize: 14, lineHeight: 22, fontWeight: '600', opacity: 0.9 },
 
   mainCard: { backgroundColor: '#1E3246', borderRadius: 24, padding: 24, marginBottom: 32, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 8 },

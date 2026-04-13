@@ -203,13 +203,22 @@ export default function ScanScreen() {
           let currentTech = '';
           let currentProtocol = serverProtocol;
 
-          // --- STRICT 40-60 GREYLIST LOGIC ---
-          if (serverProtocol.includes('AI')) {
+          // --- HARDCODED EXPLANATIONS & GREYLIST LOGIC ---
+          if (serverProtocol.includes('Levenshtein')) {
+            // Extract the targeted domain from the server's response (e.g., 'google.com')
+            const spoofMatch = data.summary?.match(/spoof '([^']+)'/);
+            const targetDomain = spoofMatch ? spoofMatch[1].toUpperCase() : "A TRUSTED SITE";
+            
+            currentSummary = `Typosquatting alert! This URL is a fake version of ${targetDomain}. Do not trust it.`;
+            currentTech = "Blocked via Levenshtein String Analysis. Edit distance algorithm detected a high-probability spoofing attempt.";
+            currentVerdict = 'Phishing';
+          }
+          else if (serverProtocol.includes('AI')) {
             if (phishingProb >= 40 && phishingProb <= 60) {
               currentVerdict = 'Suspicious';
               currentProtocol = 'Heuristic Greylist';
               currentSummary = "AI analysis is inconclusive. This link has features of both safe and malicious sites. Proceed with caution.";
-              currentTech = `Uncertain classification. The Random Forest returned a ${currentConfidence}% anomaly score, placing it in the heuristic grey zone.`;
+              currentTech = `Uncertain classification. The Random Forest returned a ${currentConfidence}% anomaly score.`;
             } else if (currentVerdict === 'Phishing') {
               currentProtocol = 'AI RF Analysis'; 
               currentSummary = "This website exhibits malicious characteristics and is likely attempting to steal credentials or data.";

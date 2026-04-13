@@ -1,12 +1,12 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Tabs, useRouter } from 'expo-router'; // <-- Added useRouter
+import { Tabs, useRouter } from 'expo-router'; 
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Animated, StatusBar, StyleSheet, Text, View } from 'react-native'; // <-- Added Alert
+import { ActivityIndicator, Alert, Animated, StatusBar, StyleSheet, Text, View } from 'react-native'; // <-- Added ActivityIndicator
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // --- FIREBASE IMPORTS ---
-import { doc, getDoc, onSnapshot } from 'firebase/firestore'; // <-- Added onSnapshot
-import { signOut } from 'firebase/auth'; // <-- Added signOut
+import { doc, getDoc, onSnapshot } from 'firebase/firestore'; 
+import { signOut } from 'firebase/auth'; 
 import { auth, db } from '../../firebaseConfig';
 
 // --- IMPORT THE THEME TOWER ---
@@ -132,8 +132,14 @@ export default function TabLayout() {
   const headerBgColor = isDark ? '#1A242E' : '#FBFBF9'; 
   const headerTextColor = isDark ? '#FFFFFF' : '#000000';
 
-  // Prevent flashing while checking role
-  if (isCheckingRole) return null;
+  // --- THE FIX: Smooth Loading Screen Instead of Null ---
+  if (isCheckingRole) {
+    return (
+      <View style={{ flex: 1, backgroundColor: headerBgColor, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color={isDark ? '#4DA8DA' : '#2D4356'} />
+      </View>
+    );
+  }
 
   return (
     <>

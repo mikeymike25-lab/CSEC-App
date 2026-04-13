@@ -16,13 +16,20 @@ import {
   View
 } from 'react-native';
 
-// --- FIREBASE IMPORTS ---
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore'; // <-- NEW: Added onSnapshot
+// --- FIREBASE & GOOGLE IMPORTS ---
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import { GoogleAuthProvider, signInWithCredential, signInWithEmailAndPassword } from 'firebase/auth';
+import { doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore'; 
 import { auth, db } from '../firebaseConfig';
 
 // --- THEME CONTEXT ---
 import { useTheme } from '../context/ThemeContext';
+
+// --- GOOGLE OAUTH CONFIGURATION ---
+// MUST REPLACE WITH YOUR ACTUAL WEB CLIENT ID FROM FIREBASE CONSOLE
+GoogleSignin.configure({
+  webClientId: '251221632759-pskohqm9190nq399sptr9v7b6vha5gqf.apps.googleusercontent.com', 
+});
 
 // --- CUSTOM ANIMATED TECH LOGO ---
 const AnimatedTechLogo = ({ isDark }: { isDark: boolean }) => {
@@ -83,8 +90,6 @@ export default function LoginScreen() {
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  
-  // --- NEW: MAINTENANCE STATE ---
   const [isMaintenance, setIsMaintenance] = useState(false);
 
   // --- DYNAMIC COLORS ---
@@ -104,7 +109,20 @@ export default function LoginScreen() {
     return () => unsub();
   }, []);
 
-  // --- LOGIN LOGIC ---
+  // --- HELPER: CHECK DIRECTIVES ---
+  const checkGlobalDirectives = async (user: any) => {
+    if (isMaintenance) {
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      const role = userDoc.exists() ? userDoc.data().role : 'user';
+
+      if (role !== 'admin') {
+        await auth.signOut();
+        throw new Error('SYSTEM LOCKDOWN: The network is currently down for maintenance. Only Administrators can access the app at this time.');
+      }
+    }
+  };
+
+  // --- EMAIL LOGIN LOGIC ---
   const handleEmailLogin = async () => {
     setErrorMessage(''); 
     Keyboard.dismiss();
@@ -114,48 +132,72 @@ export default function LoginScreen() {
       return;
     }
 
-    const emailRegex = /\S+@\S+\.\S+/;
-    if (!emailRegex.test(email)) {
-      setErrorMessage('Please enter a valid email address format.');
-      return;
-    }
-
     setIsLoading(true);
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
-      const user = userCredential.user;
-
-      // GLOBAL DIRECTIVE CHECK: MAINTENANCE MODE
-      if (isMaintenance) {
-        const userDoc = await getDoc(doc(db, 'users', user.uid));
-        const role = userDoc.exists() ? userDoc.data().role : 'user';
-
-        if (role !== 'admin') {
-          await auth.signOut();
-          setErrorMessage('SYSTEM LOCKDOWN: The network is currently down for maintenance. Only Administrators can access the app at this time.');
-          setIsLoading(false);
-          return; 
-        }
-      }
-
+      await checkGlobalDirectives(userCredential.user);
       router.replace('/tabs');
-    } catch (e) { 
-      const error = e as any; 
-      if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+    } catch (e: any) { 
+      if (e.code === 'auth/invalid-credential' || e.code === 'auth/user-not-found' || e.code === 'auth/wrong-password') {
         setErrorMessage('Invalid email or password. Please try again.');
       } else {
-        setErrorMessage(error.message); 
+        setErrorMessage(e.message); 
       }
     } finally { 
       setIsLoading(false);
     }
   };
 
-  const handleGoogleLogin = () => {
-    Alert.alert(
-      "Feature Disabled", 
-      "Google Sign-In requires a custom Android build. Please use Email/Password to test in Expo Go."
-    );
+  // --- GOOGLE OAUTH LOGIN LOGIC (FIXED FOR V11+) ---
+  const handleGoogleLogin = async () => {
+    setErrorMessage('');
+    setIsLoading(true);
+    
+    try {
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      
+      // The newest library version wraps the token in a data object!
+      const response = await GoogleSignin.signIn();
+      const idToken = response.data?.idToken;
+      
+      if (!idToken) {
+        throw new Error("Google Sign-In failed to return an ID Token.");
+      }
+
+      const googleCredential = GoogleAuthProvider.credential(idToken);
+      const userCredential = await signInWithCredential(auth, googleCredential);
+      const user = userCredential.user;
+
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDocSnap = await getDoc(userDocRef);
+      
+      if (!userDocSnap.exists()) {
+        await setDoc(userDocRef, {
+          uid: user.uid,
+          name: user.displayName || 'C-SEC Agent',
+          email: user.email,
+          createdAt: new Date(),
+          tier: 'Tier 1 Analyst',
+          trustScore: 100, 
+          activeKeys: 0,
+          role: 'agent',
+          accountStatus: 'active',
+          profileImage: user.photoURL || null
+        });
+      }
+
+      await checkGlobalDirectives(user);
+      router.replace('/tabs');
+    } catch (error: any) {
+      console.log("Google Login Error:", error);
+      if (error.code === 'SIGN_IN_CANCELLED') {
+        // User closed the pop-up, silently ignore
+      } else {
+        setErrorMessage('Google Authentication failed. Please try again.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -167,7 +209,6 @@ export default function LoginScreen() {
           
           <AnimatedTechLogo isDark={isDark} />
 
-          {/* --- NEW: MAINTENANCE BANNER --- */}
           {isMaintenance && (
             <View style={styles.maintenanceBanner}>
               <Ionicons name="warning" size={20} color="#F59E0B" style={{ marginRight: 8 }} />
@@ -177,10 +218,8 @@ export default function LoginScreen() {
             </View>
           )}
           
-          {/* Error Message Display */}
           {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
-          {/* Input Fields */}
           <View style={styles.inputContainer}>
             <TextInput 
               style={[styles.input, { backgroundColor: inputBg, color: textColor, shadowColor: cardShadow }]} 
@@ -207,16 +246,11 @@ export default function LoginScreen() {
                 onPress={() => setPasswordVisible(!passwordVisible)}
                 style={styles.eyeIcon}
               >
-                <Ionicons 
-                  name={passwordVisible ? "eye-off" : "eye"} 
-                  size={22} 
-                  color={placeholderColor} 
-                />
+                <Ionicons name={passwordVisible ? "eye-off" : "eye"} size={22} color={placeholderColor} />
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* Login Button */}
           <TouchableOpacity 
             style={[styles.loginButton, isLoading && { opacity: 0.7 }]} 
             activeOpacity={0.8}
@@ -230,7 +264,6 @@ export default function LoginScreen() {
             )}
           </TouchableOpacity>
 
-          {/* Sign Up Link */}
           <View style={styles.signupContainer}>
             <Text style={[styles.signupText, { color: textColor }]}>Don't have an account yet? </Text>
             <TouchableOpacity onPress={() => router.push('/signup')}> 
@@ -240,11 +273,11 @@ export default function LoginScreen() {
 
           <View style={[styles.divider, { backgroundColor: isDark ? '#2D4356' : '#DDD' }]} />
 
-          {/* Social Icons */}
           <View style={styles.socialContainer}>
             <TouchableOpacity 
               style={[styles.socialIconBox, { backgroundColor: inputBg, shadowColor: cardShadow }]} 
               onPress={handleGoogleLogin}
+              disabled={isLoading}
             >
                <FontAwesome name="google" size={24} color="#cd382a" />
             </TouchableOpacity>
@@ -263,7 +296,6 @@ const styles = StyleSheet.create({
   animatedLogoContainer: { alignItems: 'center', marginBottom: 30, marginTop: 10 },
   logoMainText: { fontSize: 48, fontWeight: '900', letterSpacing: 4 },
   
-  // --- NEW BANNER STYLES ---
   maintenanceBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(245, 158, 11, 0.1)', borderColor: '#F59E0B', borderWidth: 1, padding: 15, borderRadius: 12, width: '100%', marginBottom: 20 },
   maintenanceBannerText: { color: '#F59E0B', fontWeight: 'bold', fontSize: 12, flex: 1, lineHeight: 18 },
 

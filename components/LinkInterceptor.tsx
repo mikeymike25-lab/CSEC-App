@@ -98,8 +98,17 @@ const LinkInterceptor = forwardRef<LinkInterceptorRef, {}>((props, ref) => {
       let currentProtocol = serverProtocol;
       let uiType: FlagType = 'safe';
 
-      // --- STRICT 40-60 GREYLIST LOGIC ---
-      if (serverProtocol.includes('AI')) {
+      // --- HARDCODED EXPLANATIONS & GREYLIST LOGIC ---
+      if (serverProtocol.includes('Levenshtein')) {
+        // Extract the targeted domain from the server's response (e.g., 'google.com')
+        const spoofMatch = data.summary?.match(/spoof '([^']+)'/);
+        const targetDomain = spoofMatch ? spoofMatch[1].toUpperCase() : "A TRUSTED SITE";
+        
+        currentSummary = `Typosquatting alert! This URL is a fake version of ${targetDomain}. Do not trust it.`;
+        currentTech = "Blocked via Levenshtein String Analysis. Edit distance algorithm detected a high-probability spoofing attempt.";
+        uiType = 'danger';
+      }
+      else if (serverProtocol.includes('AI')) {
         if (phishingProb >= 40 && phishingProb <= 60) {
           currentVerdict = 'Suspicious';
           currentProtocol = 'Heuristic Greylist';
@@ -153,8 +162,6 @@ const LinkInterceptor = forwardRef<LinkInterceptorRef, {}>((props, ref) => {
       if (!incomingUrl || incomingUrl.startsWith('csec://') || incomingUrl.startsWith('exp://')) return;
 
       // --- THE MAGIC FIX ---
-      // This stops Expo Router from crashing by forcing the app safely back to the Dashboard!
-      // The setTimeout ensures the Router has fully mounted before redirecting.
       setTimeout(() => {
         router.replace('/tabs');
       }, 100);

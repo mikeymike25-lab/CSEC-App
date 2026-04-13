@@ -123,12 +123,21 @@ export default function AdminScreen() {
     logAction(`Rerouted AI Engine to ${aiServerUrl}`);
   };
 
-  const handleSendBroadcast = () => {
+  // UPDATED: Now saves both the broadcast message and the current timestamp
+  const handleSendBroadcast = async () => {
     if (!broadcastMessage.trim()) return;
-    updateGlobalConfig('activeBroadcast', broadcastMessage);
-    Alert.alert("Broadcast Transmitted", "Message sent to all active agents.");
-    logAction(`Sent Global Broadcast: "${broadcastMessage}"`);
-    setBroadcastMessage('');
+    try {
+      await setDoc(doc(db, 'system', 'config'), {
+        activeBroadcast: broadcastMessage,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+      
+      Alert.alert("Broadcast Transmitted", "Message sent to all active agents.");
+      logAction(`Sent Global Broadcast: "${broadcastMessage}"`);
+      setBroadcastMessage('');
+    } catch (error) {
+      Alert.alert("Transmission Failed", "Could not sync broadcast configuration.");
+    }
   };
 
   const handleThreatIntel = (type: 'whitelist' | 'blacklist') => {

@@ -4,6 +4,7 @@ import joblib
 import pandas as pd
 from urllib.parse import urlparse
 from flask import Flask, request, jsonify
+import Levenshtein # <-- NEW IMPORT
 
 app = Flask(__name__)
 
@@ -28,20 +29,14 @@ except Exception as e:
 # ---------------------------------------------------------
 # 1.5 LOAD SECURITY LISTS (GATES 1 & 2)
 # ---------------------------------------------------------
-# We use try/except so the server won't crash if the CSVs are missing.
-# It will just skip the lists and rely entirely on the AI.
-
-# Load Blacklist
 try:
     blacklist_df = pd.read_csv('online-valid.csv', header=None, names=['url'], low_memory=False)
-    # Convert to a set for lightning-fast lookups
     blacklist_urls = set(blacklist_df['url'].astype(str).str.lower())
     print(f"Gate 1 Active: Loaded {len(blacklist_urls)} Blacklisted URLs.")
 except Exception:
     print("No blacklist.csv found. Gate 1 (Blacklist) is disabled.")
     blacklist_urls = set()
 
-# Load Whitelist
 try:
     whitelist_df = pd.read_csv('tranco_JLQJY.csv', header=None, names=['domain'], low_memory=False)
     whitelist_domains = set(whitelist_df['domain'].astype(str).str.lower())
@@ -55,7 +50,6 @@ except Exception:
 # 2. FEATURE EXTRACTION (For the AI)
 # ---------------------------------------------------------
 def get_counts(text, is_missing=False):
-    """If the URL part is missing, return -1 for all counts to match the CSV"""
     if is_missing:
         return {char: -1 for char in ['dot', 'hyphen', 'underline', 'slash', 'questionmark', 'equal', 'at', 'and', 'exclamation', 'space', 'tilde', 'comma', 'plus', 'asterisk', 'hashtag', 'dollar', 'percent']}
     
@@ -113,6 +107,34 @@ def extract_111_features(url):
     return pd.DataFrame([final_row], columns=expected_features)
 
 
+# --- TARGETS TO PROTECT FROM TYPOSQUATTING ---
+PROTECTED_DOMAINS = [
+    # Global Tech & Social
+    "paypal.com", "facebook.com", "google.com", "apple.com", "microsoft.com", 
+    "netflix.com", "amazon.com", "yahoo.com", "instagram.com", "twitter.com",
+    
+    # Philippine Banks
+    "bdo.com.ph", "bpi.com.ph", "landbank.com", "unionbankph.com",
+    
+    # Philippine E-Wallets & Digital Banks
+    "gcash.com", "maya.ph", "coins.ph", "shopee.ph", 
+    "grab.com", "gotyme.com.ph", "seabank.ph"
+]
+
+def check_typosquatting(scanned_domain):
+    """
+    Checks if a domain is trying to visually spoof a popular domain.
+    Running Levenshtein against 1 million domains is too slow, so we check
+    against a high-priority list of targets.
+    """
+    for safe_domain in PROTECTED_DOMAINS:
+        distance = Levenshtein.distance(scanned_domain, safe_domain)
+        # If it's 1 or 2 characters off from a major bank/site, it's highly suspicious!
+        if 0 < distance <= 2:
+            return True, safe_domain
+    return False, None
+
+
 # ---------------------------------------------------------
 # 3. API ENDPOINT
 # ---------------------------------------------------------
@@ -149,6 +171,20 @@ def analyze_link():
                 "protocol": "Whitelist Protocol",
                 "confidence": 100.0,
                 "status": "success"
+            })
+
+        # --- GATE 2.5: LEVENSHTEIN TYPOSQUATTING CHECK ---
+        # Only runs if it wasn't an EXACT match on the whitelist.
+        is_spoof, targeted_domain = check_typosquatting(domain)
+        if is_spoof:
+            return jsonify({
+                "scanned_url": target_url,
+                "is_phishing": True,
+                "verdict": "Phishing",
+                "protocol": "Levenshtein String Analysis",
+                "confidence": 98.5, # Extremely high confidence of malicious intent
+                "status": "success",
+                "summary": f"Typosquatting detected. The URL is attempting to spoof '{targeted_domain}'."
             })
 
         # --- GATE 3: AI MODEL (GREYLIST) ---
