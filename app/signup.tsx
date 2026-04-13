@@ -20,7 +20,7 @@ import {
 
 // --- FIREBASE IMPORTS ---
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore'; 
 import { auth, db } from '../firebaseConfig';
 
 // --- THEME CONTEXT ---
@@ -30,10 +30,9 @@ import { useTheme } from '../context/ThemeContext';
 const AnimatedTechLogo = ({ isDark }: { isDark: boolean }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(20)).current;
-  const cursorOpacity = useRef(new Animated.Value(1)).current; // <-- Hardware animated cursor
+  const cursorOpacity = useRef(new Animated.Value(1)).current; 
 
   useEffect(() => {
-    // 1. Smooth fade-in and slide-up boot sequence
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -47,21 +46,20 @@ const AnimatedTechLogo = ({ isDark }: { isDark: boolean }) => {
       })
     ]).start();
 
-    // 2. Hardware-Accelerated Terminal Blink
     Animated.loop(
       Animated.sequence([
         Animated.timing(cursorOpacity, {
           toValue: 0,
-          duration: 100, // Quick fade out
+          duration: 100, 
           useNativeDriver: true,
         }),
-        Animated.delay(400), // Pause
+        Animated.delay(400), 
         Animated.timing(cursorOpacity, {
           toValue: 1,
-          duration: 100, // Quick fade in
+          duration: 100, 
           useNativeDriver: true,
         }),
-        Animated.delay(400) // Pause
+        Animated.delay(400) 
       ])
     ).start();
     
@@ -98,6 +96,10 @@ export default function SignupScreen() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
 
+  // --- GLOBAL DIRECTIVE STATE ---
+  const [registrationOpen, setRegistrationOpen] = useState(true);
+  const [isMaintenance, setIsMaintenance] = useState(false);
+
   // --- DYNAMIC COLORS ---
   const bgColor = isDark ? '#121A21' : '#F9F7E8';
   const inputBg = isDark ? '#1A242E' : '#FFFFFF';
@@ -106,8 +108,25 @@ export default function SignupScreen() {
   const cardShadow = isDark ? '#000' : '#8A9AA9';
   const modalColor = isDark ? '#1A242E' : '#F9F7E8';
 
-  // --- LOGIC (UNTOUCHED) ---
+  // --- LISTEN FOR SYSTEM STATUS ---
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'system', 'config'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setRegistrationOpen(data.allowNewSignups ?? true);
+        setIsMaintenance(data.maintenanceMode === true);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  // --- HELPER: SHOULD FORM BE DISABLED? ---
+  const isFormDisabled = isLoading || !registrationOpen || isMaintenance;
+
+  // --- SIGNUP LOGIC ---
   const handleSignUp = async () => {
+    if (isFormDisabled) return;
+
     let isValid = true;
     let newErrors: Record<string, string> = {};
 
@@ -156,7 +175,8 @@ export default function SignupScreen() {
           tier: 'Tier 1 Analyst',
           trustScore: 100, 
           activeKeys: 0,
-          role: 'agent' 
+          role: 'agent',
+          accountStatus: 'active' 
         });
 
         setIsLoading(false);
@@ -193,8 +213,19 @@ export default function SignupScreen() {
             <Ionicons name="arrow-back" size={28} color={isDark ? '#4DA8DA' : '#2D4356'} />
           </TouchableOpacity>
 
-          {/* EXACT MATCH OF THE LOGIN SCREEN LOGO */}
           <AnimatedTechLogo isDark={isDark} />
+
+          {/* --- GLOBAL DIRECTIVE: DYNAMIC CLOSED BANNER --- */}
+          {(isMaintenance || !registrationOpen) && (
+            <View style={styles.closedBanner}>
+              <Ionicons name="lock-closed" size={20} color="#EF4444" style={{ marginRight: 8 }} />
+              <Text style={styles.closedBannerText}>
+                {isMaintenance 
+                  ? "System is under maintenance. Registration is temporarily paused." 
+                  : "Registration is currently closed by the System Administrator."}
+              </Text>
+            </View>
+          )}
 
           {/* Input: Name */}
           <View style={styles.inputContainer}>
@@ -203,7 +234,8 @@ export default function SignupScreen() {
                 styles.input, 
                 { backgroundColor: inputBg, color: textColor, shadowColor: cardShadow },
                 focusedInput === 'name' && styles.inputFocused, 
-                errors.name ? styles.inputError : null
+                errors.name ? styles.inputError : null,
+                isFormDisabled && { opacity: 0.5 }
               ]} 
               placeholder="Name" 
               placeholderTextColor={placeholderColor}
@@ -211,7 +243,7 @@ export default function SignupScreen() {
               onFocus={() => setFocusedInput('name')}
               onBlur={() => setFocusedInput(null)}
               onChangeText={(text) => { setName(text); setErrors({...errors, name: ''}); }}
-              editable={!isLoading}
+              editable={!isFormDisabled}
             />
             {errors.name ? <Text style={styles.errorText}>{errors.name}</Text> : null}
           </View>
@@ -223,7 +255,8 @@ export default function SignupScreen() {
                 styles.input, 
                 { backgroundColor: inputBg, color: textColor, shadowColor: cardShadow },
                 focusedInput === 'email' && styles.inputFocused, 
-                errors.email ? styles.inputError : null
+                errors.email ? styles.inputError : null,
+                isFormDisabled && { opacity: 0.5 }
               ]} 
               placeholder="Email" 
               placeholderTextColor={placeholderColor}
@@ -233,7 +266,7 @@ export default function SignupScreen() {
               onFocus={() => setFocusedInput('email')}
               onBlur={() => setFocusedInput(null)}
               onChangeText={(text) => { setEmail(text); setErrors({...errors, email: ''}); }}
-              editable={!isLoading}
+              editable={!isFormDisabled}
             />
             {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
           </View>
@@ -244,7 +277,8 @@ export default function SignupScreen() {
               styles.passwordWrapper, 
               { backgroundColor: inputBg, shadowColor: cardShadow },
               focusedInput === 'password' && styles.inputFocused, 
-              errors.password ? styles.inputError : null
+              errors.password ? styles.inputError : null,
+              isFormDisabled && { opacity: 0.5 }
             ]}>
               <TextInput 
                 style={[styles.passwordInput, { color: textColor }]} 
@@ -255,9 +289,9 @@ export default function SignupScreen() {
                 onFocus={() => setFocusedInput('password')}
                 onBlur={() => setFocusedInput(null)}
                 onChangeText={(text) => { setPassword(text); setErrors({...errors, password: ''}); }}
-                editable={!isLoading}
+                editable={!isFormDisabled}
               />
-              <TouchableOpacity onPress={() => setPasswordVisible(!passwordVisible)} style={styles.eyeIcon}>
+              <TouchableOpacity onPress={() => setPasswordVisible(!passwordVisible)} style={styles.eyeIcon} disabled={isFormDisabled}>
                 <Ionicons name={passwordVisible ? "eye-off" : "eye"} size={22} color={placeholderColor} />
               </TouchableOpacity>
             </View>
@@ -270,7 +304,8 @@ export default function SignupScreen() {
               styles.passwordWrapper, 
               { backgroundColor: inputBg, shadowColor: cardShadow },
               focusedInput === 'confirmPassword' && styles.inputFocused, 
-              errors.confirmPassword ? styles.inputError : null
+              errors.confirmPassword ? styles.inputError : null,
+              isFormDisabled && { opacity: 0.5 }
             ]}>
               <TextInput 
                 style={[styles.passwordInput, { color: textColor }]} 
@@ -281,9 +316,9 @@ export default function SignupScreen() {
                 onFocus={() => setFocusedInput('confirmPassword')}
                 onBlur={() => setFocusedInput(null)}
                 onChangeText={(text) => { setConfirmPassword(text); setErrors({...errors, confirmPassword: ''}); }}
-                editable={!isLoading}
+                editable={!isFormDisabled}
               />
-              <TouchableOpacity onPress={() => setConfirmPasswordVisible(!confirmPasswordVisible)} style={styles.eyeIcon}>
+              <TouchableOpacity onPress={() => setConfirmPasswordVisible(!confirmPasswordVisible)} style={styles.eyeIcon} disabled={isFormDisabled}>
                 <Ionicons name={confirmPasswordVisible ? "eye-off" : "eye"} size={22} color={placeholderColor} />
               </TouchableOpacity>
             </View>
@@ -291,8 +326,8 @@ export default function SignupScreen() {
           </View>
 
           {/* Checkbox & Terms */}
-          <View style={styles.checkboxRow}>
-            <TouchableOpacity onPress={() => { setAgreeToTerms(!agreeToTerms); setErrors({...errors, terms: ''}); }} disabled={isLoading}>
+          <View style={[styles.checkboxRow, isFormDisabled && { opacity: 0.5 }]}>
+            <TouchableOpacity onPress={() => { setAgreeToTerms(!agreeToTerms); setErrors({...errors, terms: ''}); }} disabled={isFormDisabled}>
               <Ionicons 
                 name={agreeToTerms ? "checkbox" : "square-outline"} 
                 size={24} 
@@ -301,10 +336,10 @@ export default function SignupScreen() {
             </TouchableOpacity>
             <View style={styles.termsTextContainer}>
               <Text style={[styles.termsText, { color: textColor }]}>I have read and agree to the </Text>
-              <TouchableOpacity onPress={() => setModalVisible(true)} disabled={isLoading}>
+              <TouchableOpacity onPress={() => setModalVisible(true)} disabled={isFormDisabled}>
                 <Text style={styles.termsLink}>Terms and Conditions </Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setModalVisible(true)} disabled={isLoading}>
+              <TouchableOpacity onPress={() => setModalVisible(true)} disabled={isFormDisabled}>
               <Text style={[styles.termsLink]}>and Privacy Policy</Text>
               </TouchableOpacity>
             </View>
@@ -313,15 +348,17 @@ export default function SignupScreen() {
 
           {/* Sign Up Button */}
           <TouchableOpacity 
-            style={[styles.signupButton, isLoading && { opacity: 0.7 }]} 
+            style={[styles.signupButton, isFormDisabled && { opacity: 0.5 }]} 
             activeOpacity={0.8} 
             onPress={handleSignUp}
-            disabled={isLoading}
+            disabled={isFormDisabled}
           >
             {isLoading ? (
               <ActivityIndicator color="#FFF" />
             ) : (
-              <Text style={styles.signupButtonText}>Sign Up</Text>
+              <Text style={styles.signupButtonText}>
+                {isMaintenance ? "SYSTEM DOWN" : (registrationOpen ? "Sign Up" : "REGISTRATION CLOSED")}
+              </Text>
             )}
           </TouchableOpacity>
 
@@ -386,13 +423,32 @@ const styles = StyleSheet.create({
   scrollContainer: { flexGrow: 1, alignItems: 'center', paddingHorizontal: 30, paddingTop: 60, paddingBottom: 40 },
   backButton: { position: 'absolute', top: 50, left: 20, padding: 10, zIndex: 10 },
   
-  // --- EXACT LOGO STYLES MATCHING LOGIN SCREEN ---
-  animatedLogoContainer: { alignItems: 'center', marginBottom: 50, marginTop: 10 },
+  animatedLogoContainer: { alignItems: 'center', marginBottom: 30, marginTop: 10 },
   logoMainText: { 
     fontSize: 48, 
     fontWeight: '900', 
     letterSpacing: 4,
     marginTop: 70,
+  },
+
+  // --- BANNER STYLE ---
+  closedBanner: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: 'rgba(239, 68, 68, 0.1)', 
+    borderColor: '#EF4444', 
+    borderWidth: 1, 
+    padding: 15, 
+    borderRadius: 12, 
+    width: '100%', 
+    marginBottom: 20 
+  },
+  closedBannerText: { 
+    color: '#EF4444', 
+    fontWeight: 'bold', 
+    fontSize: 12, 
+    lineHeight: 18,
+    flex: 1 
   },
 
   inputContainer: { width: '100%', marginBottom: 15 },

@@ -149,7 +149,15 @@ const LinkInterceptor = forwardRef<LinkInterceptorRef, {}>((props, ref) => {
 
   useEffect(() => {
     const handleIncomingLink = async (incomingUrl: string | null) => {
+      // Ignore empty links or internal app links
       if (!incomingUrl || incomingUrl.startsWith('csec://') || incomingUrl.startsWith('exp://')) return;
+
+      // --- THE MAGIC FIX ---
+      // This stops Expo Router from crashing by forcing the app safely back to the Dashboard!
+      // The setTimeout ensures the Router has fully mounted before redirecting.
+      setTimeout(() => {
+        router.replace('/tabs');
+      }, 100);
 
       setUrl(incomingUrl);
       setType('scanning');

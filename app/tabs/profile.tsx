@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
@@ -16,9 +17,13 @@ import {
   View
 } from 'react-native';
 
+// --- NEW: IMPORTS FOR NOTIFICATIONS AND MEMORY ---
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
+
 // --- FIREBASE IMPORTS ---
 import { getAuth, sendEmailVerification, signOut, updateProfile } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, doc, onSnapshot, setDoc, updateDoc, query, where } from 'firebase/firestore';
 import { auth, db } from '../../firebaseConfig';
 
 // --- THEME CONTEXT ---
@@ -38,14 +43,28 @@ export default function ProfileScreen() {
   const [isVerificationSending, setIsVerificationSending] = useState(false);
   const [isVerifiedModalVisible, setIsVerifiedModalVisible] = useState(false); 
   
+  // Account Status Modal State
+  const [isStatusModalVisible, setIsStatusModalVisible] = useState(false);
+  const [statusModalDetails, setStatusModalDetails] = useState({ title: '', message: '', color: '' });
+
+  // Unified Report Problem & History State
+  const [isReportModalVisible, setIsReportModalVisible] = useState(false);
+  const [reportText, setReportText] = useState('');
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const [userReports, setUserReports] = useState<any[]>([]);
+
   // Real-time Engine State
   const [engineStatus, setEngineStatus] = useState('Checking...');
   const [isOnline, setIsOnline] = useState(false);
   
-  // FIX: Replaced "Loading..." with a cooler default fallback
+  // Admin Check
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // User Data 
   const [userData, setUserData] = useState({
     name: 'C-SEC Agent',
-    email: 'Connecting...'
+    email: 'Connecting...',
+    accountStatus: 'active'
   });
 
   // --- EDIT PROFILE MODAL STATE ---
@@ -63,72 +82,133 @@ export default function ProfileScreen() {
   const iconBgColor = isDark ? '#2D4356' : '#FBFBF9';
   const badgeBgColor = isDark ? '#2D4356' : '#EAE8D9';
   const modalCancelBgColor = isDark ? '#2D4356' : '#EAE8D9';
-  const inputBgColor = isDark ? '#121A21' : '#F4F6F8';
-
+  const inputBgColor = isDark ? '#121A21' : '#F4F6F8'; 
+  
   const redAccent = '#EF4444';
   const greenAccent = '#10B981';
   const blueAccent = '#4DA8DA';
+  const warningAccent = '#F59E0B'; 
+  const adminAccent = '#4DA8DA'; 
 
-  // --- 1. INITIAL FETCH ---
+  // --- 1. REAL-TIME DATA FETCH ---
   useEffect(() => {
-    const fetchUserData = async () => {
-      const user = auth.currentUser;
-      if (user) {
-        setAccountId(`CS-${user.uid.substring(0, 4).toUpperCase()}`);
-        await user.reload(); 
-        setIsEmailVerified(user.emailVerified);
+    const user = auth.currentUser;
+    if (!user) return;
 
-        try {
-          const userDoc = await getDoc(doc(db, 'users', user.uid));
-          
-          // Generate a random tactical name just in case the real name is missing
-          const randomDesignation = `Agent-${Math.floor(1000 + Math.random() * 9000)}`;
+    setAccountId(`CS-${user.uid.substring(0, 4).toUpperCase()}`);
+    user.reload().then(() => setIsEmailVerified(user.emailVerified));
 
-          if (userDoc.exists()) {
-            const data = userDoc.data();
-            
-            setUserData({
-              // Try DB Name -> Auth Name -> Random Name
-              name: data.name || user.displayName || randomDesignation,
-              email: data.email || user.email || 'N/A',
-            });
+    const unsubUser = onSnapshot(doc(db, 'users', user.uid), async (docSnap) => {
+      const randomDesignation = `Agent-${Math.floor(1000 + Math.random() * 9000)}`;
 
-            if (data.profileImage) {
-              setProfileImage(data.profileImage);
-            } else if (user.photoURL) {
-              setProfileImage(user.photoURL);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const newStatus = data.accountStatus || 'active';
+
+        setUserData(prev => {
+          if (prev.accountStatus === 'active' && newStatus !== 'active') {
+            if (newStatus === 'suspended') {
+              setStatusModalDetails({ title: 'Account Suspended', message: 'Your scanning privileges have been temporarily suspended by a System Administrator.', color: warningAccent });
+            } else if (newStatus === 'banned') {
+              setStatusModalDetails({ title: 'Account Banned', message: 'Your account has been permanently restricted due to a violation of protocols.', color: redAccent });
             }
-          } else {
-            // Auto-heal missing firestore doc
-            await setDoc(doc(db, 'users', user.uid), {
-              uid: user.uid,
-              name: user.displayName || randomDesignation,
-              email: user.email,
-              createdAt: new Date(),
-              role: 'user',
-              profileImage: user.photoURL || null
-            });
-            
-            setUserData({
-              name: user.displayName || randomDesignation,
-              email: user.email || 'N/A',
-            });
+            setIsStatusModalVisible(true);
           }
-        } catch (error) {
-          console.error("Error fetching user data:", error);
-          // Fallback if network fails completely
-          setUserData(prev => ({
-            ...prev,
-            name: user?.displayName || 'C-SEC Agent',
-            email: user?.email || 'N/A'
-          }));
-        }
+
+          return {
+            name: data.name || user.displayName || randomDesignation,
+            email: data.email || user.email || 'N/A',
+            accountStatus: newStatus
+          };
+        });
+
+        if (data.profileImage) setProfileImage(data.profileImage);
+        else if (user.photoURL) setProfileImage(user.photoURL);
+
+        if (data.role === 'admin') setIsAdmin(true);
+
+      } else {
+        await setDoc(doc(db, 'users', user.uid), {
+          uid: user.uid,
+          name: user.displayName || randomDesignation,
+          email: user.email,
+          createdAt: new Date(),
+          role: 'user',
+          accountStatus: 'active',
+          profileImage: user.photoURL || null
+        });
       }
-    };
-    fetchUserData();
+    });
+
+    return () => unsubUser();
   }, []);
 
-  // --- 2. REAL-TIME AI ENGINE MONITORING ---
+  // --- 2. REAL-TIME USER REPORTS LISTENER (UPGRADED PUSH NOTIFS) ---
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const q = query(collection(db, 'reports'), where('uid', '==', user.uid));
+    const unsubReports = onSnapshot(q, async (snapshot) => {
+      
+      // Watch for status changes to trigger a live notification
+      for (const change of snapshot.docChanges()) {
+        if (change.type === 'modified') {
+          const data = change.doc.data();
+          
+          if (data.status === 'read') {
+            // Prevent spam by checking local storage for this specific report ID
+            const alertedKey = `notified_report_${change.doc.id}`;
+            const alreadyAlerted = await AsyncStorage.getItem(alertedKey);
+            
+            if (!alreadyAlerted) {
+              await AsyncStorage.setItem(alertedKey, 'true');
+              
+              // Fetch user's local notification preferences
+              const storedPrefs = await AsyncStorage.getItem('csec_notification_prefs');
+              const prefs = storedPrefs ? JSON.parse(storedPrefs) : null;
+              
+              // Only trigger if Master Push is ON and Report Updates are ON
+              if (prefs && prefs.masterPushEnabled && prefs.reportUpdatesEnabled) {
+                await Notifications.scheduleNotificationAsync({
+                  content: {
+                    title: "Report Reviewed 🛡️",
+                    body: "The System Admin has reviewed your recent feedback. Thank you!",
+                    sound: true,
+                  },
+                  trigger: null, // Send instantly
+                });
+              } else {
+                // Fallback to in-app alert if push is disabled
+                Alert.alert(
+                  "Report Reviewed", 
+                  "The System Admin has reviewed your recent feedback. Thank you for helping keep Sentinel secure!"
+                );
+              }
+            }
+          }
+        }
+      }
+
+      const fetchedReports: any[] = [];
+      snapshot.forEach((doc) => {
+        fetchedReports.push({ id: doc.id, ...doc.data() });
+      });
+      
+      // Sort newest first locally
+      fetchedReports.sort((a, b) => {
+        const timeA = a.createdAt?.seconds || 0;
+        const timeB = b.createdAt?.seconds || 0;
+        return timeB - timeA;
+      });
+      
+      setUserReports(fetchedReports);
+    });
+
+    return () => unsubReports();
+  }, []);
+
+  // --- 3. REAL-TIME AI ENGINE MONITORING ---
   useEffect(() => {
     const checkEngine = async () => {
       try {
@@ -155,7 +235,7 @@ export default function ProfileScreen() {
     return () => clearInterval(interval); 
   }, []);
 
-  // --- 3. REAL-TIME EMAIL VERIFICATION LISTENER ---
+  // --- 4. REAL-TIME EMAIL VERIFICATION LISTENER ---
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
 
@@ -180,7 +260,6 @@ export default function ProfileScreen() {
     };
   }, [isEmailVerified]);
 
-  // --- 4. SEND VERIFICATION EMAIL ---
   const handleSendVerificationEmail = async () => {
     const user = auth.currentUser;
     if (user && !user.emailVerified) {
@@ -200,7 +279,6 @@ export default function ProfileScreen() {
     }
   };
 
-  // --- 5. EDIT PROFILE LOGIC ---
   const openEditModal = () => {
     setEditName(userData.name);
     setEditImageUri(profileImage);
@@ -285,6 +363,42 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleSubmitReport = async () => {
+    if (!reportText.trim()) {
+      Alert.alert("Notice", "Please describe the problem before submitting.");
+      return;
+    }
+
+    setIsSubmittingReport(true);
+    try {
+      const user = auth.currentUser;
+      await addDoc(collection(db, "reports"), {
+        uid: user?.uid || "unknown",
+        accountId: accountId,
+        email: userData.email,
+        name: userData.name,
+        message: reportText.trim(),
+        createdAt: new Date(),
+        status: 'unread'
+      });
+
+      Alert.alert("Report Sent", "Your issue has been logged and sent to the Command Center. Thank you!");
+      setReportText('');
+    } catch (error) {
+      console.error("Report Error:", error);
+      Alert.alert("Error", "Failed to send the report. Please check your connection and try again.");
+    } finally {
+      setIsSubmittingReport(false);
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    const s = status.toLowerCase();
+    if (s === 'suspended') return warningAccent;
+    if (s === 'banned') return redAccent;
+    return greenAccent; 
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: bgColor }]}>
       <ScrollView 
@@ -292,7 +406,6 @@ export default function ProfileScreen() {
         contentContainerStyle={styles.scrollContent}
       >
         
-        {/* Header/Avatar Section */}
         <View style={styles.headerSection}>
           <View style={styles.avatarWrapper}>
             <Image 
@@ -303,9 +416,8 @@ export default function ProfileScreen() {
           
           <Text style={[styles.userName, { color: textColorPrimary }]}>{userData.name}</Text>
           <Text style={[styles.userEmail, { color: textColorSecondary }]}>{userData.email}</Text>
-          
+
           <View style={styles.badgeAndEditRow}>
-            {/* REAL EMAIL VERIFICATION BADGE */}
             {!isEmailVerified ? (
               <TouchableOpacity 
                 style={[styles.tierBadge, { backgroundColor: '#FFF0F0', borderColor: '#FDD5CD', borderWidth: 1 }]}
@@ -328,7 +440,6 @@ export default function ProfileScreen() {
               </View>
             )}
 
-            {/* EDIT PROFILE BUTTON */}
             <TouchableOpacity 
               style={[styles.editProfileBtn, { backgroundColor: cardColor }]}
               onPress={openEditModal}
@@ -339,12 +450,11 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* App Status Indicators */}
-        <View style={styles.statsRow}>
+        <View style={[styles.statsRow, { marginBottom: 40 }]}>
           <View style={[styles.statBox, { backgroundColor: cardColor }]}>
             <Text style={[styles.statLabel, { color: textColorSecondary }]}>ACCOUNT STATUS</Text>
-            <Text style={[styles.statValue, { color: isEmailVerified ? greenAccent : redAccent }]}>
-              {isEmailVerified ? 'Secured' : 'Pending'}
+            <Text style={[styles.statValue, { color: getStatusColor(userData.accountStatus) }]}>
+              {userData.accountStatus ? userData.accountStatus.toUpperCase() : 'ACTIVE'}
             </Text>
           </View>
           <View style={[styles.statBox, { backgroundColor: cardColor }]}>
@@ -355,14 +465,29 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* Settings Header */}
         <View style={styles.settingsHeader}>
           <Text style={[styles.settingsTitle, { color: textColorPrimary }]}>System Configuration</Text>
           <Text style={[styles.accountIdText, { color: textColorSecondary }]}>ID: {accountId}</Text>
         </View>
 
-        {/* Settings Menu Items */}
-        <TouchableOpacity style={[styles.menuItem, { backgroundColor: cardColor }]}>
+        {isAdmin && (
+          <TouchableOpacity 
+            style={[styles.menuItem, { backgroundColor: cardColor, borderColor: adminAccent, borderWidth: 1 }]}
+            onPress={() => router.push('/admin' as any)} 
+          >
+            <View style={[styles.menuIconWrapper, { backgroundColor: 'rgba(77, 168, 218, 0.1)' }]}>
+              <MaterialCommunityIcons name="shield-crown-outline" size={22} color={adminAccent} />
+            </View>
+            <Text style={[styles.menuTitle, { color: adminAccent, fontWeight: '800' }]}>Command Center</Text>
+            <Feather name="chevron-right" size={20} color={adminAccent} style={styles.chevron} />
+          </TouchableOpacity>
+        )}
+
+        <TouchableOpacity 
+          style={[styles.menuItem, { backgroundColor: cardColor }]}
+          activeOpacity={0.7}
+          onPress={() => router.push('/security' as any)}
+        >
           <View style={[styles.menuIconWrapper, { backgroundColor: iconBgColor }]}>
             <ShieldIcon color={textColorPrimary} />
           </View>
@@ -370,7 +495,11 @@ export default function ProfileScreen() {
           <Feather name="chevron-right" size={20} color="#C4CBD3" style={styles.chevron} />
         </TouchableOpacity>
 
-        <TouchableOpacity style={[styles.menuItem, { backgroundColor: cardColor }]}>
+        <TouchableOpacity 
+          style={[styles.menuItem, { backgroundColor: cardColor }]}
+          activeOpacity={0.7}
+          onPress={() => router.push('/notification' as any)}
+        >
           <View style={[styles.menuIconWrapper, { backgroundColor: iconBgColor }]}>
             <BellIcon color={textColorPrimary} />
           </View>
@@ -390,7 +519,24 @@ export default function ProfileScreen() {
           <Feather name="chevron-right" size={20} color="#C4CBD3" style={styles.chevron} />
         </TouchableOpacity>
 
-        {/* Logout Button */}
+        {/* --- UNIFIED REPORT PROBLEM & HISTORY BUTTON --- */}
+        <TouchableOpacity 
+          style={[styles.menuItem, { backgroundColor: cardColor }]}
+          activeOpacity={0.7}
+          onPress={() => setIsReportModalVisible(true)}
+        >
+          <View style={[styles.menuIconWrapper, { backgroundColor: iconBgColor }]}>
+            <Feather name="alert-triangle" size={18} color={textColorPrimary} />
+          </View>
+          <Text style={[styles.menuTitle, { color: textColorPrimary }]}>Report a Problem</Text>
+          {userReports.length > 0 && (
+            <View style={{ backgroundColor: blueAccent, marginRight: 10, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
+              <Text style={{ fontSize: 10, color: '#FFF', fontWeight: 'bold' }}>{userReports.length}</Text>
+            </View>
+          )}
+          <Feather name="chevron-right" size={20} color="#C4CBD3" style={styles.chevron} />
+        </TouchableOpacity>
+
         <TouchableOpacity 
           style={styles.logoutItem}
           onPress={() => setLogoutModalVisible(true)}
@@ -407,6 +553,85 @@ export default function ProfileScreen() {
         </Text>
 
       </ScrollView>
+
+      {/* --- UNIFIED REPORT & HISTORY MODAL --- */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={isReportModalVisible}
+        onRequestClose={() => !isSubmittingReport && setIsReportModalVisible(false)}
+      >
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+          style={[styles.modalOverlayBottom, { justifyContent: 'flex-end' }]}
+        >
+          <View style={[styles.editModalContainer, { backgroundColor: cardColor, height: '85%' }]}>
+            
+            <View style={styles.editModalHeader}>
+              <Text style={[styles.modalTitle, { color: textColorPrimary, marginBottom: 0 }]}>Report Problem</Text>
+              <TouchableOpacity onPress={() => !isSubmittingReport && setIsReportModalVisible(false)}>
+                <Feather name="x" size={24} color={textColorSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              
+              <Text style={[styles.inputLabel, { color: textColorSecondary, marginBottom: 10 }]}>
+                SUBMIT NEW REPORT
+              </Text>
+              <View style={styles.inputGroup}>
+                <TextInput
+                  style={[styles.textInput, { backgroundColor: inputBgColor, color: textColorPrimary, height: 100, paddingTop: 15, textAlignVertical: 'top' }]}
+                  value={reportText}
+                  onChangeText={setReportText}
+                  placeholder="Describe the issue you are experiencing..."
+                  placeholderTextColor={textColorSecondary}
+                  multiline
+                />
+              </View>
+              <TouchableOpacity 
+                style={[styles.saveProfileBtn, { backgroundColor: warningAccent, marginBottom: 30 }]}
+                onPress={handleSubmitReport}
+                disabled={isSubmittingReport}
+              >
+                {isSubmittingReport ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.saveProfileBtnText}>SUBMIT REPORT</Text>
+                )}
+              </TouchableOpacity>
+
+              <View style={[styles.divider, { backgroundColor: isDark ? '#2D4356' : '#F2F0E4', marginBottom: 20 }]} />
+
+              <Text style={[styles.inputLabel, { color: textColorSecondary, marginBottom: 15 }]}>
+                PREVIOUS REPORTS
+              </Text>
+
+              {userReports.length === 0 ? (
+                <Text style={{ color: textColorSecondary, textAlign: 'center', marginTop: 10, fontStyle: 'italic' }}>
+                  No previous reports found.
+                </Text>
+              ) : (
+                userReports.map((report) => (
+                  <View key={report.id} style={[styles.historyCard, { backgroundColor: inputBgColor, borderLeftColor: report.status === 'read' ? greenAccent : warningAccent }]}>
+                    <View style={styles.historyHeaderRow}>
+                      <Text style={[styles.historyDate, { color: textColorSecondary }]}>
+                        {report.createdAt?.toDate ? report.createdAt.toDate().toLocaleDateString() : 'Recent'}
+                      </Text>
+                      <View style={[styles.statusPill, { backgroundColor: report.status === 'read' ? greenAccent + '20' : warningAccent + '20' }]}>
+                        <Text style={[styles.statusText, { color: report.status === 'read' ? greenAccent : warningAccent }]}>
+                          {report.status === 'read' ? 'REVIEWED' : 'PENDING'}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={[styles.historyMsg, { color: textColorPrimary }]}>"{report.message}"</Text>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       {/* --- SUCCESS VERIFIED MODAL --- */}
       <Modal
@@ -434,6 +659,32 @@ export default function ProfileScreen() {
         </View>
       </Modal>
 
+      {/* --- ACCOUNT STATUS ALERT MODAL --- */}
+      <Modal
+        animationType="fade" 
+        transparent={true}
+        visible={isStatusModalVisible}
+        onRequestClose={() => setIsStatusModalVisible(false)}
+      >
+        <View style={styles.modalOverlayCenter}>
+          <View style={[styles.successModalContainer, { backgroundColor: cardColor, borderColor: statusModalDetails.color, borderWidth: 1 }]}>
+            <View style={[styles.successIconWrapper, { backgroundColor: statusModalDetails.color + '20' }]}>
+              <MaterialCommunityIcons name="alert-octagon" size={40} color={statusModalDetails.color} />
+            </View>
+            <Text style={[styles.modalTitle, { color: textColorPrimary, marginBottom: 10 }]}>{statusModalDetails.title}</Text>
+            <Text style={[styles.modalBody, { color: textColorSecondary }]}>
+              {statusModalDetails.message}
+            </Text>
+            <TouchableOpacity 
+              style={[styles.saveProfileBtn, { backgroundColor: statusModalDetails.color }]}
+              onPress={() => setIsStatusModalVisible(false)}
+            >
+              <Text style={styles.saveProfileBtnText}>UNDERSTOOD</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* --- EDIT PROFILE MODAL --- */}
       <Modal
         animationType="slide"
@@ -441,7 +692,10 @@ export default function ProfileScreen() {
         visible={isEditModalVisible}
         onRequestClose={() => !isSavingProfile && setIsEditModalVisible(false)}
       >
-        <View style={styles.modalOverlayBottom}>
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+          style={styles.modalOverlayBottom}
+        >
           <View style={[styles.editModalContainer, { backgroundColor: cardColor }]}>
             
             <View style={styles.editModalHeader}>
@@ -489,7 +743,7 @@ export default function ProfileScreen() {
             </TouchableOpacity>
 
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* --- LOGOUT MODAL --- */}
@@ -561,7 +815,7 @@ const styles = StyleSheet.create({
   avatarImage: { width: 120, height: 120, borderRadius: 60, borderWidth: 3 },
   userName: { fontSize: 28, fontWeight: 'bold', marginBottom: 2 },
   userEmail: { fontSize: 14, fontWeight: '500', marginBottom: 12 },
-  
+
   badgeAndEditRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   tierBadge: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 20 },
   tierText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
@@ -569,7 +823,7 @@ const styles = StyleSheet.create({
   editProfileBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 20, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 3 },
   editProfileBtnText: { fontSize: 12, fontWeight: '700' },
 
-  statsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 40 },
+  statsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
   statBox: { borderRadius: 24, padding: 24, flex: 0.48, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5 },
   statLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 10 },
   statValue: { fontSize: 20, fontWeight: 'bold' },
@@ -590,11 +844,21 @@ const styles = StyleSheet.create({
   
   modalOverlayBottom: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
   modalOverlayCenter: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 24 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   
-  // EDIT MODAL STYLES
+  // MODAL STYLES
   editModalContainer: { borderTopLeftRadius: 40, borderTopRightRadius: 40, padding: 30, shadowColor: '#000', shadowOffset: { width: 0, height: -10 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 20 },
   editModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 30 },
   modalTitle: { fontSize: 20, fontWeight: 'bold' },
+  
+  historyCard: { borderRadius: 16, padding: 16, marginBottom: 15, borderLeftWidth: 4, elevation: 1 },
+  historyHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  historyDate: { fontSize: 11, fontWeight: '600', letterSpacing: 0.5 },
+  historyMsg: { fontSize: 14, lineHeight: 22, fontWeight: '500' },
+  statusPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  statusText: { fontSize: 10, fontWeight: 'bold', letterSpacing: 0.5 },
+  divider: { height: 1 },
+
   editAvatarSection: { alignItems: 'center', marginBottom: 30 },
   editAvatarPreview: { width: 100, height: 100, borderRadius: 50, borderWidth: 3, marginBottom: 15 },
   changePictureBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20 },

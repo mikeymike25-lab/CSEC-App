@@ -1,8 +1,13 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Tabs } from 'expo-router';
-import React, { useEffect, useRef } from 'react';
-import { Animated, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { Tabs, useRouter } from 'expo-router'; // <-- Added useRouter
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, Animated, StatusBar, StyleSheet, Text, View } from 'react-native'; // <-- Added Alert
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+// --- FIREBASE IMPORTS ---
+import { doc, getDoc, onSnapshot } from 'firebase/firestore'; // <-- Added onSnapshot
+import { signOut } from 'firebase/auth'; // <-- Added signOut
+import { auth, db } from '../../firebaseConfig';
 
 // --- IMPORT THE THEME TOWER ---
 import { useTheme } from '../../context/ThemeContext';
@@ -17,16 +22,16 @@ const AnimatedHeaderLogo = ({ isDark }: { isDark: boolean }) => {
       Animated.sequence([
         Animated.timing(cursorOpacity, {
           toValue: 0,
-          duration: 100, // Quick fade out
+          duration: 100, 
           useNativeDriver: true,
         }),
-        Animated.delay(400), // Pause
+        Animated.delay(400), 
         Animated.timing(cursorOpacity, {
           toValue: 1,
-          duration: 100, // Quick fade in
+          duration: 100, 
           useNativeDriver: true,
         }),
-        Animated.delay(400) // Pause
+        Animated.delay(400) 
       ])
     ).start();
   }, [cursorOpacity]);
@@ -60,14 +65,75 @@ const TabIcon = ({ name, label, focused, isDark }: { name: any, label: string, f
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets(); 
-  
-  // 1. Grab the theme state
   const { isDark } = useTheme();
+  const router = useRouter();
 
-  // 2. Define dynamic navigation colors (NOW MATCHED)
+  // --- ADMIN STATE LOGIC ---
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isCheckingRole, setIsCheckingRole] = useState(true);
+
+  // 1. Initial Check for Admin Tabs
+  useEffect(() => {
+    const checkAdminStatus = async () => {
+      const user = auth.currentUser;
+      if (user) {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          if (userDoc.exists() && userDoc.data().role === 'admin') {
+            setIsAdmin(true);
+          }
+        } catch (error) {
+          console.error("Layout Role Check Error:", error);
+        }
+      }
+      setIsCheckingRole(false);
+    };
+    checkAdminStatus();
+  }, []);
+
+  // --- 2. GLOBAL DIRECTIVE: MAINTENANCE LOCKDOWN LISTENER ---
+  useEffect(() => {
+    const unsubConfig = onSnapshot(doc(db, 'system', 'config'), async (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        
+        if (data.maintenanceMode === true) {
+          const user = auth.currentUser;
+          if (user) {
+            try {
+              // Always verify against the DB to ensure they haven't bypassed React state
+              const userDoc = await getDoc(doc(db, 'users', user.uid));
+              const role = userDoc.exists() ? userDoc.data().role : 'user';
+              
+              if (role !== 'admin') {
+                // If they are not an admin, instantly log them out and kick them to the login screen
+                Alert.alert(
+                  "SYSTEM LOCKDOWN",
+                  "The network has been placed in maintenance mode. Your session has been terminated by the System Administrator.",
+                  [{ text: "Understood" }]
+                );
+                
+                await signOut(auth);
+                router.replace('/'); 
+              }
+            } catch (err) {
+              console.error("Lockdown check error:", err);
+            }
+          }
+        }
+      }
+    });
+
+    return () => unsubConfig();
+  }, []);
+
+  // Define dynamic navigation colors
   const barBgColor = isDark ? '#1A242E' : '#FBFBF9';
-  const headerBgColor = isDark ? '#1A242E' : '#FBFBF9'; // MATCHES BOTTOM NAV EXACTLY
+  const headerBgColor = isDark ? '#1A242E' : '#FBFBF9'; 
   const headerTextColor = isDark ? '#FFFFFF' : '#000000';
+
+  // Prevent flashing while checking role
+  if (isCheckingRole) return null;
 
   return (
     <>
@@ -83,7 +149,7 @@ export default function TabLayout() {
           headerTitle: () => <AnimatedHeaderLogo isDark={isDark} />, 
           headerTitleAlign: 'left',
           headerStyle: {
-            backgroundColor: headerBgColor, // Dynamic Header Background
+            backgroundColor: headerBgColor, 
             elevation: 2,
             shadowColor: '#000',
             shadowOffset: { width: 0, height: 2 },
@@ -96,7 +162,7 @@ export default function TabLayout() {
             alignItems: 'center',
           },
           tabBarStyle: {
-            backgroundColor: barBgColor, // Dynamic Tab Bar Background
+            backgroundColor: barBgColor, 
             position: 'absolute',
             bottom: 0,
             left: 0,
@@ -116,6 +182,7 @@ export default function TabLayout() {
           },
         }}
       >
+        {/* --- VISIBLE TABS --- */}
         <Tabs.Screen
           name="index"
           options={{
@@ -151,6 +218,15 @@ export default function TabLayout() {
               <TabIcon name="account-outline" label="PROFILE" focused={focused} isDark={isDark} />
             ),
           }}
+        />
+
+        {/* --- HIDDEN TABS --- */}
+        <Tabs.Screen 
+          name="security" 
+          options={{ 
+            headerTitle: 'Security Preferences',
+            href: null, 
+          }} 
         />
       </Tabs>
     </>

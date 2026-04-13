@@ -1,8 +1,13 @@
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications'; 
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react'; 
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
+// --- FIREBASE IMPORTS ---
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../../firebaseConfig';
 
 // --- TUNE INTO THE RADIO TOWER ---
 import { useTheme } from '../../context/ThemeContext';
@@ -14,6 +19,9 @@ export default function DashboardScreen() {
   // State to hold dynamic history data
   const [recentScan, setRecentScan] = useState<any>(null);
   const [totalScans, setTotalScans] = useState(0);
+  
+  // State for the Global Broadcast
+  const [broadcastMessage, setBroadcastMessage] = useState<string | null>(null);
 
   // Define dynamic colors
   const bgColor = isDark ? '#121A21' : '#F9F7E8';
@@ -35,7 +43,7 @@ export default function DashboardScreen() {
     return greenAccent;
   };
 
-  // Fetch data from AsyncStorage whenever the Dashboard becomes active
+  // 1. Fetch data from AsyncStorage whenever the Dashboard becomes active
   useFocusEffect(
     useCallback(() => {
       const loadRecentData = async () => {
@@ -56,6 +64,53 @@ export default function DashboardScreen() {
     }, [])
   );
 
+  // 2. Real-time listener for the Global Broadcast + Push Notifications
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'system', 'config'), async (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        
+        if (data.activeBroadcast && data.activeBroadcast.trim() !== '') {
+          setBroadcastMessage(data.activeBroadcast);
+
+          try {
+            // --- THE FIX: Fetch the last broadcast this phone actually saw ---
+            const lastSeenBroadcast = await AsyncStorage.getItem('csec_last_broadcast');
+
+            // Check if this is a BRAND NEW broadcast 
+            if (lastSeenBroadcast !== data.activeBroadcast) {
+              
+              // Immediately save it so we NEVER buzz for this exact message again
+              await AsyncStorage.setItem('csec_last_broadcast', data.activeBroadcast);
+
+              // Fetch user's local notification preferences
+              const storedPrefs = await AsyncStorage.getItem('csec_notification_prefs');
+              const prefs = storedPrefs ? JSON.parse(storedPrefs) : null;
+              
+              // Only trigger if Master Push is ON and Broadcasts are ON
+              if (prefs && prefs.masterPushEnabled && prefs.broadcastsEnabled) {
+                await Notifications.scheduleNotificationAsync({
+                  content: {
+                    title: "SYSTEM BROADCAST ⚠️",
+                    body: data.activeBroadcast,
+                    sound: true,
+                  },
+                  trigger: null, // Send instantly
+                });
+              }
+            }
+          } catch (error) {
+            console.log("Could not send push notification:", error);
+          }
+        } else {
+          setBroadcastMessage(null); 
+        }
+      }
+    });
+
+    return () => unsub(); // Cleanup listener on unmount
+  }, []);
+
   return (
     <View style={[styles.container, { backgroundColor: bgColor }]}>
       <ScrollView 
@@ -71,7 +126,27 @@ export default function DashboardScreen() {
         {/* Title */}
         <Text style={[styles.headerTitle, { color: textColorPrimary }]}>Security{'\n'}Command{'\n'}Center.</Text>
 
-        {/* --- DYNAMIC RECENT INTERCEPTION CARD (MOVED TO TOP & EXPANDED) --- */}
+        {/* --- GLOBAL BROADCAST BANNER --- */}
+        {broadcastMessage && (
+          <View style={[
+            styles.broadcastCard, 
+            { 
+              backgroundColor: isDark ? 'rgba(245, 158, 11, 0.1)' : '#FFFBEB', 
+              borderColor: isDark ? 'rgba(245, 158, 11, 0.3)' : '#FEF3C7',
+              borderLeftColor: yellowAccent 
+            }
+          ]}>
+            <View style={styles.broadcastHeader}>
+              <Ionicons name="megaphone" size={18} color={yellowAccent} />
+              <Text style={[styles.broadcastTitle, { color: yellowAccent }]}>SYSTEM BROADCAST</Text>
+            </View>
+            <Text style={[styles.broadcastText, { color: textColorPrimary }]}>
+              {broadcastMessage}
+            </Text>
+          </View>
+        )}
+
+        {/* --- DYNAMIC RECENT INTERCEPTION CARD --- */}
         {recentScan && (
           <View style={{ marginBottom: 32 }}>
             <Text style={[styles.sectionTitle, { color: textColorPrimary }]}>Latest Interception Alert</Text>
@@ -115,7 +190,7 @@ export default function DashboardScreen() {
                 {/* Metrics Row Inside Details */}
                 <View style={styles.recentMetricsRow}>
                    <View style={styles.recentMetricItem}>
-                      <Text style={[styles.recentMetricLabel, { color: textColorSecondary }]}>PHISING PROBOBILITY</Text>
+                      <Text style={[styles.recentMetricLabel, { color: textColorSecondary }]}>PHISHING PROBABILITY</Text>
                       <Text style={[styles.recentMetricValue, { color: getAccentColor(recentScan.verdict) }]}>{recentScan.confidence}%</Text>
                    </View>
                    <View style={styles.recentMetricItem}>
@@ -222,6 +297,12 @@ const styles = StyleSheet.create({
   
   headerTitle: { fontSize: 38, fontWeight: '900', lineHeight: 42, marginBottom: 24, letterSpacing: -0.5 },
   
+  // --- BROADCAST STYLES ---
+  broadcastCard: { borderWidth: 1, borderLeftWidth: 4, borderRadius: 16, padding: 20, marginBottom: 32, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
+  broadcastHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  broadcastTitle: { fontSize: 12, fontWeight: '900', letterSpacing: 1.5, marginLeft: 8 },
+  broadcastText: { fontSize: 14, lineHeight: 22, fontWeight: '600', opacity: 0.9 },
+
   mainCard: { backgroundColor: '#1E3246', borderRadius: 24, padding: 24, marginBottom: 32, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 8 },
   mainCardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   mainCardHeaderText: { color: '#A9B4C0', fontSize: 11, fontWeight: '800', marginLeft: 8, letterSpacing: 1.5 },
@@ -242,13 +323,11 @@ const styles = StyleSheet.create({
   progressBarBg: { height: 8, backgroundColor: 'rgba(150,150,150,0.15)', borderRadius: 4, overflow: 'hidden' },
   progressBarFill: { height: '100%', borderRadius: 4 },
 
-  // Updated Recent Card Styles
   recentCard: { borderRadius: 20, padding: 20, borderLeftWidth: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
   recentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   recentVerdict: { fontSize: 12, fontWeight: '900', letterSpacing: 0.5, marginLeft: 8 },
   recentUrl: { fontSize: 18, fontWeight: '700', marginBottom: 16, letterSpacing: -0.5 },
   
-  // New Full Details Block Styles
   detailsBox: { padding: 16, borderRadius: 16, marginBottom: 16 },
   detailsProtocol: { fontSize: 10, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' },
   detailsSummary: { fontSize: 14, fontWeight: '600', lineHeight: 20, marginBottom: 8 },

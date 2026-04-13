@@ -1,7 +1,7 @@
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Clipboard from 'expo-clipboard';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,8 +14,10 @@ import {
   View
 } from 'react-native';
 
-// --- NEW: Import Firebase Auth ---
+// --- FIREBASE IMPORTS ---
 import { getAuth } from 'firebase/auth';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../../firebaseConfig';
 
 import { useTheme } from '../../context/ThemeContext';
 
@@ -34,8 +36,10 @@ export default function ScanScreen() {
   const [protocol, setProtocol] = useState(''); 
   const [isCached, setIsCached] = useState(false);
 
-  // --- NEW: Verification Modal State ---
+  // --- MODAL & SECURITY STATES ---
   const [isVerificationModalVisible, setIsVerificationModalVisible] = useState(false);
+  const [accountStatus, setAccountStatus] = useState('active'); // Tracks real-time status
+  const [isStatusModalVisible, setIsStatusModalVisible] = useState(false); // Modal for suspended/banned
 
   // 1. Grab the dark mode state
   const { isDark } = useTheme();
@@ -57,6 +61,23 @@ export default function ScanScreen() {
   const redAccent = '#EF4444';
   const yellowAccent = '#F59E0B'; 
 
+  // --- NEW: REAL-TIME STATUS LISTENER ---
+  useEffect(() => {
+    const auth = getAuth();
+    const user = auth.currentUser;
+
+    if (user) {
+      // Listen to the user's document to see if an Admin suspends/bans them
+      const unsub = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
+        if (docSnap.exists()) {
+          const status = docSnap.data().accountStatus || 'active';
+          setAccountStatus(status);
+        }
+      });
+      return () => unsub(); // Cleanup on unmount
+    }
+  }, []);
+
   const handlePaste = async () => {
     try {
       const text = await Clipboard.getStringAsync();
@@ -71,7 +92,6 @@ export default function ScanScreen() {
       const existingHistory = await AsyncStorage.getItem('csec_history');
       const history = existingHistory ? JSON.parse(existingHistory) : [];
 
-      // --- FIX: Generate a random 4-digit ID instead of array length ---
       const randomId = Math.floor(1000 + Math.random() * 9000);
       const formattedId = `#${randomId}`;
 
@@ -95,18 +115,23 @@ export default function ScanScreen() {
   };
 
   const handleScan = async () => {
-    // --- NEW: VERIFICATION LOCKDOWN ---
     const auth = getAuth();
     const user = auth.currentUser;
 
+    // --- SECURITY GATE 1: ACCOUNT STATUS LOCKDOWN ---
+    if (accountStatus !== 'active') {
+      setIsStatusModalVisible(true);
+      return;
+    }
+
+    // --- SECURITY GATE 2: VERIFICATION LOCKDOWN ---
     if (user && !user.emailVerified) {
-      await user.reload(); // Fetch the absolute latest status from Firebase
+      await user.reload(); 
       if (!user.emailVerified) {
-        setIsVerificationModalVisible(true); // Pop the modal and block the scan
+        setIsVerificationModalVisible(true); 
         return; 
       }
     }
-    // ----------------------------------
 
     const cleanUrl = url.trim();
     if (!cleanUrl) {
@@ -122,7 +147,7 @@ export default function ScanScreen() {
     setIsCached(false);
 
     try {
-      // --- GATE 0: LOCAL HISTORY CROSS-REFERENCE (CACHE) ---
+      // --- LOCAL HISTORY CROSS-REFERENCE (CACHE) ---
       const existingHistory = await AsyncStorage.getItem('csec_history');
       if (existingHistory) {
         const historyArray = JSON.parse(existingHistory);
@@ -140,7 +165,7 @@ export default function ScanScreen() {
         }
       }
 
-      // --- GATE 1, 2 & 3: SERVER ARCHITECTURE ---
+      // --- SERVER ARCHITECTURE ---
       if (deepAiEnabled) {
         const apiUrl = 'https://scaling-fortnight-pjwxgqgjxjxrcr466-5000.app.github.dev/analyze-link'; 
 
@@ -159,7 +184,7 @@ export default function ScanScreen() {
           let currentVerdict = data.verdict; 
           let serverProtocol = data.protocol;
           
-          // --- CALCULATE TRUE PHISHING PROBABILITY (0% = Safe, 100% = Phishing) ---
+          // --- CALCULATE TRUE PHISHING PROBABILITY ---
           let rawConfidence = data.confidence || 0;
           let phishingProb = 0;
 
@@ -178,21 +203,18 @@ export default function ScanScreen() {
           let currentTech = '';
           let currentProtocol = serverProtocol;
 
-          // --- FIX: STRICT 40-60 GREYLIST LOGIC ---
+          // --- STRICT 40-60 GREYLIST LOGIC ---
           if (serverProtocol.includes('AI')) {
             if (phishingProb >= 40 && phishingProb <= 60) {
-              // 40% to 60%: The true Greylist
               currentVerdict = 'Suspicious';
               currentProtocol = 'Heuristic Greylist';
               currentSummary = "AI analysis is inconclusive. This link has features of both safe and malicious sites. Proceed with caution.";
               currentTech = `Uncertain classification. The Random Forest returned a ${currentConfidence}% anomaly score, placing it in the heuristic grey zone.`;
             } else if (currentVerdict === 'Phishing') {
-              // 61% to 100%: Confident Phishing
               currentProtocol = 'AI RF Analysis'; 
               currentSummary = "This website exhibits malicious characteristics and is likely attempting to steal credentials or data.";
               currentTech = "Threat verdict. Lexical analysis flagged suspicious structural anomalies and abnormal character distribution.";
             } else {
-              // 0% to 39%: Confident Safe
               currentProtocol = 'AI RF Analysis'; 
               currentSummary = "This is a safe, verified website based on current heuristic analysis.";
               currentTech = "Safe verdict. Lexical analysis found normal character distribution, optimal length, and standard pathing.";
@@ -240,7 +262,7 @@ export default function ScanScreen() {
   const getProtocolColor = () => {
     if (protocol.includes('Whitelist') || (protocol === 'AI RF Analysis' && scanResult === 'Safe')) return greenAccent;
     if (protocol.includes('Blacklist') || (protocol === 'AI RF Analysis' && scanResult === 'Phishing')) return redAccent;
-    return yellowAccent; // This handles "Heuristic Greylist"
+    return yellowAccent; 
   };
 
   const getVerdictColor = () => {
@@ -289,7 +311,10 @@ export default function ScanScreen() {
         </View>
 
         <TouchableOpacity 
-          style={[styles.scanButton, { backgroundColor: isScanning ? '#606A75' : (isDark ? '#4DA8DA' : '#2D4356') }]} 
+          style={[
+            styles.scanButton, 
+            { backgroundColor: accountStatus !== 'active' ? redAccent : (isScanning ? '#606A75' : (isDark ? '#4DA8DA' : '#2D4356')) }
+          ]} 
           activeOpacity={0.8}
           onPress={handleScan}
           disabled={isScanning}
@@ -297,10 +322,15 @@ export default function ScanScreen() {
           {isScanning ? (
             <ActivityIndicator color="#FFF" style={styles.scanButtonIcon} />
           ) : (
-            <MaterialCommunityIcons name="shield-check" size={20} color="#FFF" style={styles.scanButtonIcon} />
+            <MaterialCommunityIcons 
+              name={accountStatus !== 'active' ? "shield-lock" : "shield-check"} 
+              size={20} 
+              color="#FFF" 
+              style={styles.scanButtonIcon} 
+            />
           )}
           <Text style={styles.scanButtonText}>
-            {isScanning ? 'ANALYZING THREATS...' : 'EXECUTE MANUAL SCAN'}
+            {accountStatus !== 'active' ? 'SCANNING DISABLED' : (isScanning ? 'ANALYZING THREATS...' : 'EXECUTE MANUAL SCAN')}
           </Text>
         </TouchableOpacity>
 
@@ -388,7 +418,7 @@ export default function ScanScreen() {
         </View>
       </ScrollView>
 
-      {/* --- NEW: VERIFICATION REQUIRED MODAL --- */}
+      {/* --- VERIFICATION REQUIRED MODAL --- */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -414,6 +444,38 @@ export default function ScanScreen() {
               onPress={() => setIsVerificationModalVisible(false)}
             >
               <Text style={styles.modalActionBtnText}>UNDERSTOOD</Text>
+            </TouchableOpacity>
+            
+          </View>
+        </View>
+      </Modal>
+
+      {/* --- STATUS LOCKDOWN MODAL --- */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={isStatusModalVisible}
+        onRequestClose={() => setIsStatusModalVisible(false)}
+      >
+        <View style={styles.modalOverlayCenter}>
+          <View style={[styles.modalContainer, { backgroundColor: cardColor, borderColor: redAccent, borderWidth: 1 }]}>
+            
+            <View style={[styles.modalIconWrapper, { backgroundColor: redAccent + '20' }]}>
+              <MaterialCommunityIcons name="alert-octagon" size={32} color={redAccent} />
+            </View>
+            
+            <Text style={[styles.modalTitle, { color: textColorPrimary }]}>Access Restricted</Text>
+            
+            <Text style={[styles.modalBody, { color: textColorSecondary }]}>
+              Your scanning privileges have been revoked by a System Administrator. If you believe this is an error, please contact support.
+            </Text>
+
+            <TouchableOpacity 
+              style={[styles.modalActionBtn, { backgroundColor: redAccent }]}
+              activeOpacity={0.8}
+              onPress={() => setIsStatusModalVisible(false)}
+            >
+              <Text style={styles.modalActionBtnText}>ACKNOWLEDGE</Text>
             </TouchableOpacity>
             
           </View>
@@ -468,7 +530,7 @@ const styles = StyleSheet.create({
   metricLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5, marginBottom: 4 },
   metricValue: { fontSize: 16, fontWeight: 'bold' },
 
-  // --- NEW: MODAL STYLES ---
+  // --- MODAL STYLES ---
   modalOverlayCenter: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 24 },
   modalContainer: { borderRadius: 30, padding: 30, alignItems: 'center', width: '100%', shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 20, elevation: 10 },
   modalIconWrapper: { width: 70, height: 70, borderRadius: 35, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },

@@ -18,7 +18,8 @@ import {
 
 // --- FIREBASE IMPORTS ---
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../firebaseConfig';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore'; // <-- NEW: Added onSnapshot
+import { auth, db } from '../firebaseConfig';
 
 // --- THEME CONTEXT ---
 import { useTheme } from '../context/ThemeContext';
@@ -27,10 +28,9 @@ import { useTheme } from '../context/ThemeContext';
 const AnimatedTechLogo = ({ isDark }: { isDark: boolean }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(20)).current;
-  const cursorOpacity = useRef(new Animated.Value(1)).current; // <-- NEW: Hardware animated cursor
+  const cursorOpacity = useRef(new Animated.Value(1)).current; 
 
   useEffect(() => {
-    // 1. Smooth fade-in and slide-up boot sequence
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -44,21 +44,20 @@ const AnimatedTechLogo = ({ isDark }: { isDark: boolean }) => {
       })
     ]).start();
 
-    // 2. Hardware-Accelerated Terminal Blink
     Animated.loop(
       Animated.sequence([
         Animated.timing(cursorOpacity, {
           toValue: 0,
-          duration: 100, // Quick fade out
+          duration: 100,
           useNativeDriver: true,
         }),
-        Animated.delay(400), // Pause
+        Animated.delay(400),
         Animated.timing(cursorOpacity, {
           toValue: 1,
-          duration: 100, // Quick fade in
+          duration: 100,
           useNativeDriver: true,
         }),
-        Animated.delay(400) // Pause
+        Animated.delay(400)
       ])
     ).start();
     
@@ -84,6 +83,9 @@ export default function LoginScreen() {
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  
+  // --- NEW: MAINTENANCE STATE ---
+  const [isMaintenance, setIsMaintenance] = useState(false);
 
   // --- DYNAMIC COLORS ---
   const bgColor = isDark ? '#121A21' : '#F9F7E8';
@@ -91,6 +93,16 @@ export default function LoginScreen() {
   const textColor = isDark ? '#FFFFFF' : '#1E3246';
   const placeholderColor = isDark ? '#606A75' : '#A9A9A9';
   const cardShadow = isDark ? '#000' : '#8A9AA9';
+
+  // --- REAL-TIME LISTENER FOR MAINTENANCE MODE ---
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'system', 'config'), (docSnap) => {
+      if (docSnap.exists()) {
+        setIsMaintenance(docSnap.data().maintenanceMode === true);
+      }
+    });
+    return () => unsub();
+  }, []);
 
   // --- LOGIN LOGIC ---
   const handleEmailLogin = async () => {
@@ -110,7 +122,22 @@ export default function LoginScreen() {
 
     setIsLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
+      const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
+      const user = userCredential.user;
+
+      // GLOBAL DIRECTIVE CHECK: MAINTENANCE MODE
+      if (isMaintenance) {
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        const role = userDoc.exists() ? userDoc.data().role : 'user';
+
+        if (role !== 'admin') {
+          await auth.signOut();
+          setErrorMessage('SYSTEM LOCKDOWN: The network is currently down for maintenance. Only Administrators can access the app at this time.');
+          setIsLoading(false);
+          return; 
+        }
+      }
+
       router.replace('/tabs');
     } catch (e) { 
       const error = e as any; 
@@ -138,8 +165,17 @@ export default function LoginScreen() {
         
         <View style={styles.innerContainer}>
           
-          {/* REPLACED STATIC IMAGE WITH ANIMATED TECH LOGO */}
           <AnimatedTechLogo isDark={isDark} />
+
+          {/* --- NEW: MAINTENANCE BANNER --- */}
+          {isMaintenance && (
+            <View style={styles.maintenanceBanner}>
+              <Ionicons name="warning" size={20} color="#F59E0B" style={{ marginRight: 8 }} />
+              <Text style={styles.maintenanceBannerText}>
+                SYSTEM MAINTENANCE ACTIVE: Only Administrator logins are permitted at this time.
+              </Text>
+            </View>
+          )}
           
           {/* Error Message Display */}
           {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
@@ -224,10 +260,13 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   innerContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 30 },
   
-  // --- NEW LOGO STYLES ---
-  animatedLogoContainer: { alignItems: 'center', marginBottom: 50, marginTop: 10 },
+  animatedLogoContainer: { alignItems: 'center', marginBottom: 30, marginTop: 10 },
   logoMainText: { fontSize: 48, fontWeight: '900', letterSpacing: 4 },
   
+  // --- NEW BANNER STYLES ---
+  maintenanceBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(245, 158, 11, 0.1)', borderColor: '#F59E0B', borderWidth: 1, padding: 15, borderRadius: 12, width: '100%', marginBottom: 20 },
+  maintenanceBannerText: { color: '#F59E0B', fontWeight: 'bold', fontSize: 12, flex: 1, lineHeight: 18 },
+
   errorText: { color: '#cd382a', marginBottom: 10, textAlign: 'center', fontWeight: 'bold' },
   inputContainer: { width: '100%', marginBottom: 20 },
   input: {
