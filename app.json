@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "C-SEC",
-    "slug": "C-SEC",
+    "name": "CSEC",
+    "slug": "CSEC",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/CSEC.png",
     "scheme": "csec",
     "userInterfaceStyle": "automatic",
     "ios": {
