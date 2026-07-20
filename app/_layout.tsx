@@ -9,19 +9,23 @@ import { auth } from '../firebaseConfig';
 
 // Context & Components
 import LinkInterceptor from '../components/LinkInterceptor';
-import { ThemeProvider } from '../context/ThemeContext';
+import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import AnimatedSplash from '../components/AnimatedSplash';
 
 // Keep native splash screen hidden behind our custom one
 SplashScreen.preventAutoHideAsync();
 
-export default function RootLayout() {
+import { ThemeProvider as NavThemeProvider, DarkTheme, DefaultTheme } from '@react-navigation/native';
+
+function RootLayoutInner() {
   const [isFirebaseReady, setIsFirebaseReady] = useState(false);
   const [isAnimationDone, setIsAnimationDone] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   
   const router = useRouter();
   const segments = useSegments();
+  
+  const { isReduceMotion, isDark } = useTheme();
 
   // 1. The Official 3-Second Timer
   useEffect(() => {
@@ -62,27 +66,42 @@ export default function RootLayout() {
       // User is NOT logged in but trying to access tabs/appearance? Send to login.
       router.replace('/');
     }
-    // Notice: If user is logged in and goes to 'appearance', it completely ignores this 
-    // block and lets them pass!
-
   }, [user, isFirebaseReady, isAnimationDone, segments]);
 
+  const navTheme = isDark 
+    ? { ...DarkTheme, colors: { ...DarkTheme.colors, background: '#121A21' } } 
+    : { ...DefaultTheme, colors: { ...DefaultTheme.colors, background: '#F9F7E8' } };
+
+  return (
+    <NavThemeProvider value={navTheme}>
+      <View style={{ flex: 1, backgroundColor: isDark ? '#121A21' : '#F9F7E8' }}>
+        <Stack screenOptions={{ 
+          headerShown: false,
+          animation: isReduceMotion ? 'none' : 'fade',
+          contentStyle: { backgroundColor: isDark ? '#121A21' : '#F9F7E8' }
+        }}>
+          <Stack.Screen name="index" /> 
+          <Stack.Screen name="signup" />
+          <Stack.Screen name="tabs" />
+          <Stack.Screen name="appearance" /> 
+        </Stack>
+        
+        <LinkInterceptor />
+
+        {(!isAnimationDone || !isFirebaseReady) && (
+          <View style={[StyleSheet.absoluteFill, { zIndex: 999, elevation: 999, backgroundColor: '#F9F7E8' }]}>
+            <AnimatedSplash />
+          </View>
+        )}
+      </View>
+    </NavThemeProvider>
+  );
+}
+
+export default function RootLayout() {
   return (
     <ThemeProvider>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="index" /> 
-        <Stack.Screen name="signup" />
-        <Stack.Screen name="tabs" />
-        <Stack.Screen name="appearance" /> 
-      </Stack>
-      
-      <LinkInterceptor />
-
-      {(!isAnimationDone || !isFirebaseReady) && (
-        <View style={[StyleSheet.absoluteFill, { zIndex: 999, elevation: 999, backgroundColor: '#F9F7E8' }]}>
-          <AnimatedSplash />
-        </View>
-      )}
+      <RootLayoutInner />
     </ThemeProvider>
   );
 }

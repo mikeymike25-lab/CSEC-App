@@ -36,10 +36,16 @@ try {
 export const db = getFirestore(app);
 
 // 3. Initialize Auth WITH AsyncStorage persistence for Mobile, and default for Web
-export const auth = Platform.OS === 'web' 
-  ? getAuth(app) 
-  : initializeAuth(app, {
-      persistence: getReactNativePersistence(AsyncStorage)
-    });
+let auth;
+try {
+  auth = Platform.OS === 'web' 
+    ? getAuth(app) 
+    : initializeAuth(app, {
+        persistence: getReactNativePersistence(AsyncStorage)
+      });
+} catch (error) {
+  auth = getAuth(app);
+}
+export { auth };
 
 export const storage = getStorage(app);

@@ -108,15 +108,20 @@ export default function SignupScreen() {
   const cardShadow = isDark ? '#000' : '#8A9AA9';
   const modalColor = isDark ? '#1A242E' : '#F9F7E8';
 
-  // --- LISTEN FOR SYSTEM STATUS ---
   useEffect(() => {
-    const unsub = onSnapshot(doc(db, 'system', 'config'), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setRegistrationOpen(data.allowNewSignups ?? true);
-        setIsMaintenance(data.maintenanceMode === true);
+    const unsub = onSnapshot(
+      doc(db, 'system', 'config'), 
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setRegistrationOpen(data.allowNewSignups ?? true);
+          setIsMaintenance(data.maintenanceMode === true);
+        }
+      },
+      (error) => {
+        console.warn("Config Read Blocked by Rules (Signup):", error.code);
       }
-    });
+    );
     return () => unsub();
   }, []);
 
@@ -135,8 +140,10 @@ export default function SignupScreen() {
       isValid = false;
     }
 
+    const trimmedEmail = email.trim();
+
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
+    if (!emailRegex.test(trimmedEmail)) {
       newErrors.email = 'Please enter a valid email';
       isValid = false;
     }
@@ -162,7 +169,7 @@ export default function SignupScreen() {
     if (isValid) {
       setIsLoading(true);
       try {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const userCredential = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
         const user = userCredential.user;
 
         await updateProfile(user, { displayName: name });
@@ -178,6 +185,15 @@ export default function SignupScreen() {
           role: 'agent',
           accountStatus: 'active' 
         });
+
+        // Automatically send the verification email
+        try {
+          // Import sendEmailVerification if it's missing (it needs to be imported from 'firebase/auth')
+          const { sendEmailVerification } = require('firebase/auth');
+          await sendEmailVerification(user);
+        } catch (emailError) {
+          console.warn("Could not send verification email on signup:", emailError);
+        }
 
         setIsLoading(false);
         router.replace('/tabs'); 

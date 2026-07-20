@@ -6,9 +6,7 @@ import { getAuth } from 'firebase/auth';
 import { FlagContent, FlagType } from './FlagModals';
 import * as WebBrowser from 'expo-web-browser';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL 
-  ? `${process.env.EXPO_PUBLIC_API_URL}/analyze-link` 
-  : 'http://localhost:5000/analyze-link';
+const API_URL = 'https://csec-sentinel-api.onrender.com/analyze-link';
 
 export interface LinkInterceptorRef {
   triggerTestScan: (testUrl: string, testType: FlagType) => void;
@@ -73,6 +71,7 @@ const LinkInterceptor = forwardRef<LinkInterceptorRef, {}>((props, ref) => {
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
+          'Bypass-Tunnel-Reminder': 'true'
         },
         body: JSON.stringify({ url: targetUrl }),
       });

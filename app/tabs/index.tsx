@@ -142,6 +142,8 @@ export default function DashboardScreen() {
           setBroadcastTime(null);
         }
       }
+    }, (error) => {
+      console.warn("Dashboard Config Read Error:", error.code);
     });
 
     return () => unsub(); // Cleanup listener on unmount
@@ -216,8 +218,7 @@ export default function DashboardScreen() {
         {recentScan && (
           <View style={{ marginBottom: 32 }}>
             <Text style={[styles.sectionTitle, { color: textColorPrimary }]}>Latest Interception</Text>
-            
-            <View style={[styles.recentCard, { backgroundColor: cardColor, borderColor: getAccentColor(recentScan.verdict), borderWidth: 1 }]}>
+            <View style={[styles.recentCard, { backgroundColor: cardColor }]}>
               
               {/* Header */}
               <View style={styles.recentHeader}>

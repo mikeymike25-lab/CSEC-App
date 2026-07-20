@@ -43,12 +43,18 @@ export default function ProfileScreen() {
   const [isVerificationSending, setIsVerificationSending] = useState(false);
   const [isVerifiedModalVisible, setIsVerifiedModalVisible] = useState(false); 
   
+  // Verification Send Modal
+  const [isVerifyLinkModalVisible, setIsVerifyLinkModalVisible] = useState(false);
+  const [verifyLinkModalTitle, setVerifyLinkModalTitle] = useState('');
+  const [verifyLinkModalMessage, setVerifyLinkModalMessage] = useState('');
+  
   // Account Status Modal State
   const [isStatusModalVisible, setIsStatusModalVisible] = useState(false);
   const [statusModalDetails, setStatusModalDetails] = useState({ title: '', message: '', color: '' });
 
   // Unified Report Problem & History State
   const [isReportModalVisible, setIsReportModalVisible] = useState(false);
+  const [isReportSentModalVisible, setIsReportSentModalVisible] = useState(false);
   const [reportText, setReportText] = useState('');
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
   const [userReports, setUserReports] = useState<any[]>([]);
@@ -139,6 +145,8 @@ export default function ProfileScreen() {
           profileImage: user.photoURL || null
         });
       }
+    }, (error) => {
+      console.warn("Profile Status Listen Error:", error.code);
     });
 
     return () => unsubUser();
@@ -204,6 +212,8 @@ export default function ProfileScreen() {
       });
       
       setUserReports(fetchedReports);
+    }, (error) => {
+      console.warn("Profile Reports Listen Error:", error.code);
     });
 
     return () => unsubReports();
@@ -275,11 +285,34 @@ export default function ProfileScreen() {
     if (user && !user.emailVerified) {
       setIsVerificationSending(true);
       try {
+        const lastSentStr = await AsyncStorage.getItem(`verify_email_sent_${user.uid}`);
+        const now = Date.now();
+        if (lastSentStr) {
+          const lastSent = parseInt(lastSentStr, 10);
+          const timeElapsed = now - lastSent;
+          const waitTime = 15 * 60 * 1000; // 15 minutes
+          
+          if (timeElapsed < waitTime) {
+            const minutesLeft = Math.ceil((waitTime - timeElapsed) / 60000);
+            setVerifyLinkModalTitle("Rate Limit Active");
+            setVerifyLinkModalMessage(`Please wait ${minutesLeft} minute(s) before requesting another verification email.`);
+            setIsVerifyLinkModalVisible(true);
+            setIsVerificationSending(false);
+            return;
+          }
+        }
+
         await sendEmailVerification(user);
-        Alert.alert("Link Sent", `Check your Gmail (${user.email}) to verify your account.`);
+        await AsyncStorage.setItem(`verify_email_sent_${user.uid}`, now.toString());
+        
+        setVerifyLinkModalTitle("Verification Sent");
+        setVerifyLinkModalMessage(`Check your inbox (${user.email}) for a verification link to secure your account.`);
+        setIsVerifyLinkModalVisible(true);
       } catch (error: any) {
         if (error.code === 'auth/too-many-requests') {
-          Alert.alert("Notice", "We recently sent an email. Please wait a moment.");
+          setVerifyLinkModalTitle("Notice");
+          setVerifyLinkModalMessage("We recently sent an email. Please wait 15 minutes.");
+          setIsVerifyLinkModalVisible(true);
         } else {
           Alert.alert("Error", error.message);
         }
@@ -397,7 +430,7 @@ export default function ProfileScreen() {
         status: 'unread'
       });
 
-      Alert.alert("Report Sent", "Your issue has been logged and sent to the Command Center. Thank you!");
+      setIsReportSentModalVisible(true);
       setReportText('');
     } catch (error) {
       console.error("Report Error:", error);
@@ -698,6 +731,65 @@ export default function ProfileScreen() {
               onPress={() => setIsStatusModalVisible(false)}
             >
               <Text style={styles.saveProfileBtnText}>UNDERSTOOD</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* --- SEND VERIFICATION EMAIL MODAL --- */}
+      <Modal
+        animationType="fade" 
+        transparent={true}
+        visible={isVerifyLinkModalVisible}
+        onRequestClose={() => setIsVerifyLinkModalVisible(false)}
+      >
+        <View style={styles.modalOverlayCenter}>
+          <View style={[styles.successModalContainer, { backgroundColor: cardColor }]}>
+            <View style={[styles.successIconWrapper, { backgroundColor: 'rgba(77, 168, 218, 0.1)' }]}>
+              <Feather name="mail" size={32} color={blueAccent} />
+            </View>
+            <Text style={[styles.modalTitle, { color: textColorPrimary, marginBottom: 10, textAlign: 'center' }]}>
+              {verifyLinkModalTitle}
+            </Text>
+            <Text style={[styles.modalBody, { color: textColorSecondary, textAlign: 'center' }]}>
+              {verifyLinkModalMessage}
+            </Text>
+            <TouchableOpacity 
+              style={[styles.saveProfileBtn, { backgroundColor: blueAccent }]}
+              onPress={() => setIsVerifyLinkModalVisible(false)}
+            >
+              <Text style={styles.saveProfileBtnText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* --- REPORT SENT MODAL --- */}
+      <Modal
+        animationType="fade" 
+        transparent={true}
+        visible={isReportSentModalVisible}
+        onRequestClose={() => setIsReportSentModalVisible(false)}
+      >
+        <View style={styles.modalOverlayCenter}>
+          <View style={[styles.successModalContainer, { backgroundColor: cardColor }]}>
+            <View style={[styles.successIconWrapper, { backgroundColor: 'rgba(77, 168, 218, 0.1)' }]}>
+              <Feather name="send" size={32} color={blueAccent} />
+            </View>
+            <Text style={[styles.modalTitle, { color: textColorPrimary, marginBottom: 10, textAlign: 'center' }]}>
+              Report Sent
+            </Text>
+            <Text style={[styles.modalBody, { color: textColorSecondary, textAlign: 'center' }]}>
+              Your issue has been logged and sent to the Command Center. Thank you!
+            </Text>
+            <TouchableOpacity 
+              style={[styles.saveProfileBtn, { backgroundColor: blueAccent }]}
+              onPress={() => {
+                setIsReportSentModalVisible(false);
+                setIsReportModalVisible(false);
+              }}
+            >
+              <Text style={styles.saveProfileBtnText}>OK</Text>
             </TouchableOpacity>
           </View>
         </View>

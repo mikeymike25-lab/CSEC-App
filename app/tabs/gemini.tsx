@@ -32,7 +32,9 @@ export default function GeminiScreen() {
   const inputBg = isDark ? '#1A242E' : '#FFFFFF';
 
   const renderMessageText = (text: string, isUser: boolean) => {
-    const parts = text.split(/(\*\*.*?\*\*)/g);
+    // Strip markdown headings (e.g., ### )
+    const cleanText = text.replace(/^#+\s+/gm, '');
+    const parts = cleanText.split(/(\*\*.*?\*\*)/g);
     return parts.map((part, index) => {
       if (part.startsWith('**') && part.endsWith('**')) {
         return (
@@ -50,7 +52,7 @@ export default function GeminiScreen() {
           styles.bubbleText, 
           isUser ? { color: '#FFF' } : { color: textColorPrimary }
         ]}>
-          {part}
+          {part.replace(/\*/g, '')}
         </Text>
       );
     });
@@ -107,7 +109,7 @@ export default function GeminiScreen() {
     >
       <View style={styles.header}>
         <View style={styles.headerTitleContainer}>
-          <MaterialCommunityIcons name="chat-processing-outline" size={28} color={isDark ? '#4DA8DA' : '#2563EB'} />
+          <MaterialCommunityIcons name="chat-processing-outline" size={24} color={isDark ? '#4DA8DA' : '#2563EB'} />
           <Text style={[styles.headerTitle, { color: textColorPrimary }]}>Chatbot</Text>
         </View>
         <Text style={[styles.headerSubtitle, { color: textColorSecondary }]}>Advanced AI Threat Expert</Text>
@@ -153,7 +155,7 @@ export default function GeminiScreen() {
         )}
       </ScrollView>
 
-      <View style={[styles.inputContainer, { backgroundColor: bgColor, paddingBottom: isKeyboardVisible ? 16 : 100 }]}>
+      <View style={[styles.inputContainer, { backgroundColor: bgColor, paddingBottom: isKeyboardVisible ? 10 : 80 }]}>
         <View style={[styles.inputWrapper, { backgroundColor: inputBg }]}>
           <TextInput
             style={[styles.input, { color: textColorPrimary }]}
@@ -179,10 +181,10 @@ export default function GeminiScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { padding: 24, paddingTop: 40, paddingBottom: 10 },
+  header: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 5 },
   headerTitleContainer: { flexDirection: 'row', alignItems: 'center' },
-  headerTitle: { fontSize: 32, fontWeight: '800', marginLeft: 10 },
-  headerSubtitle: { fontSize: 14, marginTop: 4, opacity: 0.8 },
+  headerTitle: { fontSize: 24, fontWeight: '800', marginLeft: 8 },
+  headerSubtitle: { fontSize: 12, marginTop: 2, opacity: 0.8 },
   
   chatArea: { flex: 1 },
   messageWrapper: { flexDirection: 'row', marginBottom: 20, alignItems: 'flex-end' },
@@ -196,7 +198,7 @@ const styles = StyleSheet.create({
   bubbleModel: { borderBottomLeftRadius: 4 },
   bubbleText: { fontSize: 15, lineHeight: 22 },
 
-  inputContainer: { padding: 16, paddingBottom: 100 },
+  inputContainer: { padding: 12, paddingBottom: 80 },
   inputWrapper: { flexDirection: 'row', alignItems: 'flex-end', borderRadius: 24, padding: 8, paddingHorizontal: 16, elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },
   input: { flex: 1, minHeight: 40, maxHeight: 100, paddingTop: 10, paddingBottom: 10, fontSize: 16 },
   sendButton: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginLeft: 10, marginBottom: 2 },

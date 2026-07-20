@@ -4,7 +4,7 @@
     "slug": "C-SEC",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/CSEC.png",
+    "icon": "./assets/images/CSECLOGOV2.png",
     "scheme": "csec",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -12,7 +12,7 @@
       "bundleIdentifier": "com.csec.app"
     },
     "splash": {
-      "image": "./assets/images/C-SECLOGO.png",
+      "image": "./assets/images/CSECLOGOV2.png",
       "resizeMode": "contain",
       "backgroundColor": "#F9F7E8"
     },
@@ -53,7 +53,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/C-SECLOGO.png",
+          "image": "./assets/images/CSECLOGOV2.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#F9F7E8",

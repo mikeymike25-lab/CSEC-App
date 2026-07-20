@@ -9,23 +9,29 @@ const ThemeContext = createContext<any>(null);
 export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
   const systemColorScheme = useColorScheme();
   const [themePreference, setThemePreference] = useState('system');
+  const [isReduceMotion, setIsReduceMotion] = useState(false);
   const [isReady, setIsReady] = useState(false);
 
-  // Load the saved preference when the app starts
+  // Load the saved preferences when the app starts
   useEffect(() => {
-    const loadTheme = async () => {
+    const loadPreferences = async () => {
       try {
         const savedTheme = await AsyncStorage.getItem('@csec_theme');
         if (savedTheme) {
           setThemePreference(savedTheme);
         }
+        
+        const savedMotion = await AsyncStorage.getItem('@csec_motion');
+        if (savedMotion) {
+          setIsReduceMotion(savedMotion === 'true');
+        }
       } catch (error) {
-        console.error("Error loading theme", error);
+        console.error("Error loading preferences", error);
       } finally {
         setIsReady(true);
       }
     };
-    loadTheme();
+    loadPreferences();
   }, []);
 
   // Calculate the actual current mode (dark or light)
@@ -41,11 +47,21 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  // Function to change and save the reduce motion preference
+  const updateReduceMotion = async (reduce: boolean) => {
+    setIsReduceMotion(reduce);
+    try {
+      await AsyncStorage.setItem('@csec_motion', reduce.toString());
+    } catch (error) {
+      console.error("Error saving motion preference", error);
+    }
+  };
+
   // Don't broadcast until we've checked the local storage
   if (!isReady) return null;
 
   return (
-    <ThemeContext.Provider value={{ themePreference, isDark, updateTheme }}>
+    <ThemeContext.Provider value={{ themePreference, isDark, updateTheme, isReduceMotion, updateReduceMotion }}>
       {children}
     </ThemeContext.Provider>
   );

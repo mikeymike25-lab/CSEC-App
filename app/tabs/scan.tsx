@@ -41,6 +41,7 @@ export default function ScanScreen() {
   const [isVerificationModalVisible, setIsVerificationModalVisible] = useState(false);
   const [accountStatus, setAccountStatus] = useState('active'); // Tracks real-time status
   const [isStatusModalVisible, setIsStatusModalVisible] = useState(false); // Modal for suspended/banned
+  const [isInvalidUrlModalVisible, setIsInvalidUrlModalVisible] = useState(false);
 
   // 1. Grab the dark mode state
   const { isDark } = useTheme();
@@ -69,12 +70,18 @@ export default function ScanScreen() {
 
     if (user) {
       // Listen to the user's document to see if an Admin suspends/bans them
-      const unsub = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
-        if (docSnap.exists()) {
-          const status = docSnap.data().accountStatus || 'active';
-          setAccountStatus(status);
+      const unsub = onSnapshot(
+        doc(db, 'users', user.uid), 
+        (docSnap) => {
+          if (docSnap.exists()) {
+            const status = docSnap.data().accountStatus || 'active';
+            setAccountStatus(status);
+          }
+        },
+        (error) => {
+          console.warn("Scan Status Listen Error:", error.code);
         }
-      });
+      );
       return () => unsub(); // Cleanup on unmount
     }
   }, []);
@@ -138,6 +145,12 @@ export default function ScanScreen() {
     const cleanUrl = url.trim();
     if (!cleanUrl) {
       Alert.alert("Input Required", "Please enter a URL to scan.");
+      return;
+    }
+
+    const urlRegex = /^(?:https?:\/\/)?(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_\+.~#?&\/=]*)$/i;
+    if (!urlRegex.test(cleanUrl)) {
+      setIsInvalidUrlModalVisible(true);
       return;
     }
 
@@ -517,6 +530,38 @@ export default function ScanScreen() {
               onPress={() => setIsStatusModalVisible(false)}
             >
               <Text style={styles.modalActionBtnText}>ACKNOWLEDGE</Text>
+            </TouchableOpacity>
+            
+          </View>
+        </View>
+      </Modal>
+
+      {/* --- INVALID URL MODAL --- */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={isInvalidUrlModalVisible}
+        onRequestClose={() => setIsInvalidUrlModalVisible(false)}
+      >
+        <View style={styles.modalOverlayCenter}>
+          <View style={[styles.modalContainer, { backgroundColor: cardColor }]}>
+            
+            <View style={[styles.modalIconWrapper, { backgroundColor: yellowAccent + '20' }]}>
+              <Feather name="alert-triangle" size={32} color={yellowAccent} />
+            </View>
+            
+            <Text style={[styles.modalTitle, { color: textColorPrimary }]}>Invalid URL</Text>
+            
+            <Text style={[styles.modalBody, { color: textColorSecondary }]}>
+              Please input a valid URL to scan. Ensure it has a correct domain format (e.g., example.com).
+            </Text>
+
+            <TouchableOpacity 
+              style={[styles.modalActionBtn, { backgroundColor: yellowAccent }]}
+              activeOpacity={0.8}
+              onPress={() => setIsInvalidUrlModalVisible(false)}
+            >
+              <Text style={styles.modalActionBtnText}>GOT IT</Text>
             </TouchableOpacity>
             
           </View>

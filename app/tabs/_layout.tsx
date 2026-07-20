@@ -13,12 +13,17 @@ import { auth, db } from '../../firebaseConfig';
 import { useTheme } from '../../context/ThemeContext';
 
 // --- CUSTOM ANIMATED HEADER LOGO ---
-const AnimatedHeaderLogo = ({ isDark }: { isDark: boolean }) => {
+const AnimatedHeaderLogo = ({ isDark, isReduceMotion }: { isDark: boolean, isReduceMotion: boolean }) => {
   const cursorOpacity = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
+    if (isReduceMotion) {
+      cursorOpacity.setValue(1);
+      return;
+    }
+    
     // Hardware-Accelerated Terminal Blink
-    Animated.loop(
+    const animation = Animated.loop(
       Animated.sequence([
         Animated.timing(cursorOpacity, {
           toValue: 0,
@@ -33,8 +38,12 @@ const AnimatedHeaderLogo = ({ isDark }: { isDark: boolean }) => {
         }),
         Animated.delay(400) 
       ])
-    ).start();
-  }, [cursorOpacity]);
+    );
+    
+    animation.start();
+    
+    return () => animation.stop();
+  }, [cursorOpacity, isReduceMotion]);
 
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -49,8 +58,24 @@ const TabIcon = ({ name, label, focused, isDark }: { name: any, label: string, f
   const activePillColor = isDark ? '#4DA8DA' : '#1E3246';
   const inactiveTextColor = isDark ? '#606A75' : '#8A9AA9';
 
+  // Animation value
+  const scaleAnim = useRef(new Animated.Value(focused ? 1.1 : 1)).current;
+
+  useEffect(() => {
+    Animated.spring(scaleAnim, {
+      toValue: focused ? 1.15 : 1,
+      friction: 6,
+      tension: 120,
+      useNativeDriver: true,
+    }).start();
+  }, [focused]);
+
   return (
-    <View style={[styles.tabItem, focused && { backgroundColor: activePillColor }]}>
+    <Animated.View style={[
+      styles.tabItem, 
+      focused && { backgroundColor: activePillColor },
+      { transform: [{ scale: scaleAnim }] }
+    ]}>
       <MaterialCommunityIcons 
         name={name} 
         size={24} 
@@ -59,13 +84,13 @@ const TabIcon = ({ name, label, focused, isDark }: { name: any, label: string, f
       <Text style={[styles.tabLabel, { color: focused ? '#FFFFFF' : inactiveTextColor }]}>
         {label}
       </Text>
-    </View>
+    </Animated.View>
   );
 };
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets(); 
-  const { isDark } = useTheme();
+  const { isDark, isReduceMotion } = useTheme();
   const router = useRouter();
 
   // --- ADMIN STATE LOGIC ---
@@ -144,7 +169,7 @@ export default function TabLayout() {
   }
 
   return (
-    <>
+    <View style={{ flex: 1, backgroundColor: isDark ? '#121A21' : '#F9F7E8' }}>
       {/* --- Dynamic Status Bar --- */}
       <StatusBar 
         barStyle={isDark ? "light-content" : "dark-content"} 
@@ -152,9 +177,11 @@ export default function TabLayout() {
       />
       
       <Tabs
+        sceneContainerStyle={{ backgroundColor: isDark ? '#121A21' : '#F9F7E8' }}
         screenOptions={{
+          animation: isReduceMotion ? 'none' : 'fade',
           tabBarShowLabel: false, 
-          headerTitle: () => <AnimatedHeaderLogo isDark={isDark} />, 
+          headerTitle: () => <AnimatedHeaderLogo isDark={isDark} isReduceMotion={isReduceMotion} />, 
           headerTitleAlign: 'left',
           headerStyle: {
             backgroundColor: headerBgColor, 
@@ -239,7 +266,7 @@ export default function TabLayout() {
 
         {/* --- HIDDEN TABS --- */}
       </Tabs>
-    </>
+    </View>
   );
 }
 

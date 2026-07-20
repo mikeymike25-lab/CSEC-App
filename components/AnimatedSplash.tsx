@@ -14,6 +14,7 @@ export default function AnimatedSplash({ onAnimationComplete }: AnimatedSplashPr
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
   const scanAnim = useRef(new Animated.Value(0)).current;
+  const logoPulseAnim = useRef(new Animated.Value(1)).current;
 
   const bgColor = isDark ? '#121A21' : '#F9F7E8';
   const textColor = isDark ? '#4DA8DA' : '#1E3246';
@@ -49,6 +50,22 @@ export default function AnimatedSplash({ onAnimationComplete }: AnimatedSplashPr
       ])
     ).start();
 
+    // 2.5 Continuous "Securing" pulse effect for the logo
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(logoPulseAnim, {
+          toValue: 1.05,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(logoPulseAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        })
+      ])
+    ).start();
+
     // 3. Trigger the completion callback after 3 seconds
     const timer = setTimeout(() => {
       if (onAnimationComplete) {
@@ -66,16 +83,18 @@ export default function AnimatedSplash({ onAnimationComplete }: AnimatedSplashPr
     <View style={[styles.container, { backgroundColor: bgColor }]}>
       
       <Animated.View style={{ opacity: fadeAnim, transform: [{ scale: scaleAnim }], alignItems: 'center' }}>
-        <Image 
-          source={require('../assets/images/C-SECLOGO.png')} 
-          style={styles.logo}
-          resizeMode="contain"
-        />
+        <Animated.View style={{ transform: [{ scale: logoPulseAnim }] }}>
+          <Image 
+            source={require('../assets/images/CSECLOGOV2.png')} 
+            style={styles.logo}
+            resizeMode="contain"
+          />
+        </Animated.View>
         
         <View style={styles.techTextContainer}>
           <MaterialCommunityIcons name="shield-sync" size={20} color={textColor} style={styles.icon} />
           <Text style={[styles.techText, { color: textColor }]}>
-            INITIALIZING SENTINEL ENGINE...
+            SECURING ENVIRONMENT...
           </Text>
         </View>
 

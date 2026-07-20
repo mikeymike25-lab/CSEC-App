@@ -18,11 +18,10 @@ export default function AppearanceScreen() {
   const router = useRouter();
 
   // Pull the current theme and the update function directly from Context!
-  const { themePreference, isDark, updateTheme } = useTheme();
+  const { themePreference, isDark, updateTheme, isReduceMotion, updateReduceMotion } = useTheme();
 
   // Local state for toggles
   const [isStealthMode, setIsStealthMode] = useState(false);
-  const [isReduceMotion, setIsReduceMotion] = useState(false);
 
   // Dynamic colors based on isDark (which is now controlled globally!)
   const bgColor = isDark ? '#121A21' : '#F9F7E8';
@@ -147,13 +146,13 @@ export default function AppearanceScreen() {
                   <Feather name="wind" size={18} color={textColorPrimary} style={{ marginRight: 8 }} />
                   <Text style={[styles.toggleTitle, { color: textColorPrimary }]}>Reduce Motion</Text>
                 </View>
-                <Text style={[styles.toggleSubtitle, { color: textColorSecondary }]}>Disables radar animations and smooth UI transitions.</Text>
+                <Text style={[styles.toggleSubtitle, { color: textColorSecondary }]}>Disables screen animations and smooth UI transitions.</Text>
               </View>
               <Switch
                 trackColor={{ false: isDark ? "#2D4356" : "#D1D5DB", true: "#4DA8DA" }}
                 thumbColor={"#FFFFFF"}
                 ios_backgroundColor={isDark ? "#2D4356" : "#D1D5DB"}
-                onValueChange={setIsReduceMotion}
+                onValueChange={updateReduceMotion}
                 value={isReduceMotion}
               />
             </View>
