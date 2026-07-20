@@ -72,7 +72,7 @@ export default function GeminiScreen() {
       }));
 
       // NOTE: Using localhost/codespace URL based on the scan.tsx endpoint but updated for /gemini-chat
-      const apiUrl = 'https://shiny-teams-share.loca.lt/gemini-chat';
+      const apiUrl = 'https://csec-sentinel-api.onrender.com/gemini-chat';
 
       const response = await fetch(apiUrl, {
         method: 'POST',

@@ -171,7 +171,7 @@ export default function ScanScreen() {
 
       // --- SERVER ARCHITECTURE ---
       if (deepAiEnabled) {
-        const apiUrl = 'https://shiny-teams-share.loca.lt/analyze-link';
+        const apiUrl = 'https://csec-sentinel-api.onrender.com/analyze-link';
 
         const response = await fetch(apiUrl, {
           method: 'POST',

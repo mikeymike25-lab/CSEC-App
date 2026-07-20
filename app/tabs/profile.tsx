@@ -212,7 +212,7 @@ export default function ProfileScreen() {
   // --- 3. REAL-TIME AI ENGINE MONITORING ---
   const checkEngine = async () => {
     try {
-      const response = await fetch('https://shiny-teams-share.loca.lt/', {
+      const response = await fetch('https://csec-sentinel-api.onrender.com/', {
         method: 'GET',
         headers: { 
           'Accept': 'application/json',
