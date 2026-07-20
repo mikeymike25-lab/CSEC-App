@@ -14,14 +14,14 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
+  RefreshControl
 } from 'react-native';
 
 // --- NEW: IMPORTS FOR NOTIFICATIONS AND MEMORY ---
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 
-// --- FIREBASE IMPORTS ---
 import { getAuth, sendEmailVerification, signOut, updateProfile } from 'firebase/auth';
 import { addDoc, collection, doc, onSnapshot, setDoc, updateDoc, query, where } from 'firebase/firestore';
 import { auth, db } from '../../firebaseConfig';
@@ -56,6 +56,7 @@ export default function ProfileScreen() {
   // Real-time Engine State
   const [engineStatus, setEngineStatus] = useState('Checking...');
   const [isOnline, setIsOnline] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   
   // Admin Check
   const [isAdmin, setIsAdmin] = useState(false);
@@ -209,27 +210,36 @@ export default function ProfileScreen() {
   }, []);
 
   // --- 3. REAL-TIME AI ENGINE MONITORING ---
-  useEffect(() => {
-    const checkEngine = async () => {
-      try {
-        const response = await fetch('https://scaling-fortnight-pjwxgqgjxjxrcr466-5000.app.github.dev/', {
-          method: 'GET',
-          headers: { 'Accept': 'application/json' }
-        });
-
-        if (response.ok) {
-          setEngineStatus('Online');
-          setIsOnline(true);
-        } else {
-          setEngineStatus('Offline');
-          setIsOnline(false);
+  const checkEngine = async () => {
+    try {
+      const response = await fetch('https://shiny-teams-share.loca.lt/', {
+        method: 'GET',
+        headers: { 
+          'Accept': 'application/json',
+          'Bypass-Tunnel-Reminder': 'true'
         }
-      } catch (error) {
+      });
+
+      if (response.ok) {
+        setEngineStatus('Online');
+        setIsOnline(true);
+      } else {
         setEngineStatus('Offline');
         setIsOnline(false);
       }
-    };
+    } catch (error) {
+      setEngineStatus('Offline');
+      setIsOnline(false);
+    }
+  };
 
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await checkEngine();
+    setRefreshing(false);
+  };
+
+  useEffect(() => {
     checkEngine(); 
     const interval = setInterval(checkEngine, 10000); 
     return () => clearInterval(interval); 
@@ -323,20 +333,25 @@ export default function ProfileScreen() {
 
     try {
       if (editImageBase64) {
-        const IMGBB_API_KEY = '97f9a172f34bcf2ef67baf01c0e47c69'; 
+        // Upload image to Cloudinary
+        const CLOUDINARY_URL = 'https://api.cloudinary.com/v1_1/m1jqcmay/image/upload';
         const formData = new FormData();
-        formData.append('image', editImageBase64);
+        
+        // Cloudinary requires the base64 string to have the data URI prefix
+        formData.append('file', `data:image/jpeg;base64,${editImageBase64}`);
+        formData.append('upload_preset', 'Csec_profiles');
 
-        const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+        const response = await fetch(CLOUDINARY_URL, {
           method: 'POST',
           body: formData,
         });
+        
         const data = await response.json();
         
-        if (data.success) {
-          finalPhotoURL = data.data.url;
+        if (data.secure_url) {
+          finalPhotoURL = data.secure_url;
         } else {
-          throw new Error("ImgBB upload failed");
+          throw new Error(data.error?.message || "Cloudinary upload failed");
         }
       }
 
@@ -404,6 +419,9 @@ export default function ProfileScreen() {
       <ScrollView 
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={textColorPrimary} />
+        }
       >
         
         <View style={styles.headerSection}>

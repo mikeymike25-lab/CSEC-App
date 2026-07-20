@@ -1,6 +1,6 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import React from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, useColorScheme, View } from 'react-native';
 
 export type FlagType = 'scanning' | 'safe' | 'warning' | 'danger' | 'unverified';
 
@@ -9,12 +9,15 @@ interface FlagProps {
   url: string;
   isCached?: boolean;          // NEW
   protocol?: string;           // NEW
+  summary?: string;
+  technicalDetails?: string;
+  sentinelAnalysis?: string;
   onProceed: () => void;
   onClose: () => void;
   onViewDetails: () => void;
 }
 
-export const FlagContent: React.FC<FlagProps> = ({ type, url, isCached, protocol, onProceed, onClose, onViewDetails }) => {
+export const FlagContent: React.FC<FlagProps> = ({ type, url, isCached, protocol, summary, technicalDetails, sentinelAnalysis, onProceed, onClose, onViewDetails }) => {
   const isDarkMode = useColorScheme() === 'dark';
 
   const theme = {
@@ -30,13 +33,13 @@ export const FlagContent: React.FC<FlagProps> = ({ type, url, isCached, protocol
   // Helper functions to generate dynamic text based on Cache/List Filtering
   const getTitleText = () => {
     if (isCached) {
-      if (type === 'danger') return 'Known Threat (Cached)';
-      if (type === 'warning') return 'Known Risk (Cached)';
-      return 'Verified Safe (Cached)';
+      if (type === 'danger') return 'Threat (Cached)';
+      if (type === 'warning') return 'Potential Risk (Cached)';
+      return 'Safe (Cached)';
     }
-    if (type === 'danger') return protocol?.includes('Blacklist') ? 'Blacklisted Threat' : 'Threat Blocked';
-    if (type === 'warning') return 'Caution Required';
-    if (type === 'safe') return protocol?.includes('Whitelist') ? 'Trusted Platform' : 'Safe to Visit';
+    if (type === 'danger') return 'Threat';
+    if (type === 'warning') return 'Potential Risk';
+    if (type === 'safe') return 'Safe';
     return '';
   };
 
@@ -135,18 +138,44 @@ export const FlagContent: React.FC<FlagProps> = ({ type, url, isCached, protocol
         
         {/* DYNAMIC DESCRIPTIONS BASED ON PROTOCOL */}
         <Text style={[styles.verdictDesc, { color: theme.descText }]}>
-          {type === 'safe' && (
-            protocol?.includes('Whitelist') 
-            ? 'This is a safe, verified website recognized by our Trusted Platform list.' 
-            : 'This link matches known secure patterns based on structural analysis.'
-          )}
-          {type === 'warning' && 'This link shows unusual redirect patterns and falls into the heuristic greylist.'}
-          {type === 'danger' && (
-            protocol?.includes('Blacklist')
-            ? 'This URL is found in our Global Blacklist Database of known malicious actors.'
-            : <Text><Text style={{ fontWeight: 'bold', color: theme.titleText }}>High probability of phishing. </Text>The URL structure mimics a financial institution but points to an unauthorized server.</Text>
+          {summary || (
+            type === 'safe' 
+            ? (protocol?.includes('Whitelist') ? 'This is a safe, verified website recognized by our Trusted Platform list.' : 'This link matches known secure patterns based on structural analysis.')
+            : type === 'warning' ? 'This link shows unusual redirect patterns and falls into the heuristic greylist.'
+            : (protocol?.includes('Blacklist') ? 'This URL is found in our Global Blacklist Database of known malicious actors.' : <Text><Text style={{ fontWeight: 'bold', color: theme.titleText }}>High probability of phishing. </Text>The URL structure mimics a financial institution but points to an unauthorized server.</Text>)
           )}
         </Text>
+
+        {sentinelAnalysis && (
+          <View style={{ marginTop: 24, marginBottom: 8 }}>
+            <Text style={[styles.sectionLabel, { color: theme.tertiaryText }]}>THE CSEC SENTINEL ANALYSIS</Text>
+            <View style={[
+              styles.techBox, 
+              { backgroundColor: isDarkMode ? '#1A2A3A' : '#E8F4F8', borderLeftColor: '#3B82F6' }
+            ]}>
+              <View style={styles.techBoxHeader}>
+                <MaterialCommunityIcons name="robot-outline" size={16} color="#3B82F6" />
+                <Text style={[styles.techBoxTitle, { color: '#3B82F6' }]}>AI SECURITY EXPERT</Text>
+              </View>
+              <ScrollView style={{ maxHeight: 120 }} nestedScrollEnabled={true}>
+                <Text style={[styles.techBoxText, { color: isDarkMode ? '#D1D5DB' : '#4B5563', fontStyle: 'italic' }]}>
+                  {sentinelAnalysis.split(/(\*\*.*?\*\*)/g).map((part, index) => {
+                    if (part.startsWith('**') && part.endsWith('**')) {
+                      return <Text key={index} style={{ fontWeight: 'bold' }}>{part.replace(/\*\*/g, '')}</Text>;
+                    }
+                    return <Text key={index}>{part}</Text>;
+                  })}
+                </Text>
+              </ScrollView>
+            </View>
+          </View>
+        )}
+
+        {technicalDetails && (
+          <Text style={[styles.verdictDesc, { color: theme.descText, marginTop: 12, opacity: 0.8, fontSize: 12 }]}>
+            {technicalDetails}
+          </Text>
+        )}
       </View>
 
       <View style={styles.buttonContainer}>
@@ -217,5 +246,10 @@ const styles = StyleSheet.create({
   tertiaryBtn: { paddingVertical: 12, alignItems: 'center', width: '100%' },
   tertiaryBtnText: { fontWeight: '700', fontSize: 13, letterSpacing: 0.5 },
   footerRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 8 },
-  footerText: { fontSize: 10, marginLeft: 4 }
+  footerText: { fontSize: 10, marginLeft: 4 },
+  sectionLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8 },
+  techBox: { padding: 16, borderRadius: 12, borderLeftWidth: 4 },
+  techBoxHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  techBoxTitle: { fontSize: 12, fontWeight: '800', letterSpacing: 0.5, marginLeft: 6 },
+  techBoxText: { fontSize: 14, lineHeight: 22 }
 });

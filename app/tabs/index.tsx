@@ -16,7 +16,6 @@ export default function DashboardScreen() {
   const { isDark } = useTheme();
   const router = useRouter();
 
-  // State to hold dynamic history data
   const [recentScan, setRecentScan] = useState<any>(null);
   const [totalScans, setTotalScans] = useState(0);
   
@@ -156,8 +155,8 @@ export default function DashboardScreen() {
       >
         {/* Status Badge */}
         <View style={[styles.badgeContainer, { backgroundColor: badgeBg }]}>
-          <View style={[styles.badgeDot, { backgroundColor: isDark ? blueAccent : '#1E3246' }]} />
-          <Text style={[styles.badgeText, { color: textColorSecondary }]}>SENTINEL DEEP ENGINE ACTIVE</Text>
+           <View style={[styles.badgeDot, { backgroundColor: greenAccent }]} />
+           <Text style={[styles.badgeText, { color: textColorSecondary }]}>SYSTEM SECURE & ACTIVE</Text>
         </View>
 
         {/* --- DYNAMIC GREETING & TITLE --- */}
@@ -165,166 +164,132 @@ export default function DashboardScreen() {
           <Text style={[styles.greetingText, { color: textColorSecondary }]}>
             {getGreeting()} {userName}.
           </Text>
-          <Text style={[styles.headerTitle, { color: textColorPrimary }]}>Security{'\n'}Command{'\n'}Center.</Text>
+          <Text style={[styles.headerTitle, { color: textColorPrimary }]}>Security{'\n'}Dashboard.</Text>
         </View>
 
-        {/* --- GLOBAL BROADCAST BANNER --- */}
+        {/* --- REDESIGNED GLOBAL BROADCAST BANNER --- */}
         {broadcastMessage && (
           <View style={[
             styles.broadcastCard, 
             { 
               backgroundColor: isDark ? 'rgba(245, 158, 11, 0.1)' : '#FFFBEB', 
               borderColor: isDark ? 'rgba(245, 158, 11, 0.3)' : '#FEF3C7',
-              borderLeftColor: yellowAccent 
             }
           ]}>
-            <View style={styles.broadcastHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Ionicons name="megaphone" size={18} color={yellowAccent} />
-                <Text style={[styles.broadcastTitle, { color: yellowAccent }]}>SYSTEM BROADCAST</Text>
-              </View>
-              {broadcastTime && (
-                <Text style={[styles.broadcastTime, { color: yellowAccent }]}>{broadcastTime}</Text>
-              )}
+            <View style={styles.broadcastIconContainer}>
+               <Ionicons name="alert-circle" size={24} color={yellowAccent} />
             </View>
-            <Text style={[styles.broadcastText, { color: textColorPrimary }]}>
-              {broadcastMessage}
-            </Text>
+            <View style={{ flex: 1 }}>
+                <View style={styles.broadcastHeader}>
+                  <Text style={[styles.broadcastTitle, { color: yellowAccent }]}>SYSTEM ANNOUNCEMENT</Text>
+                  {broadcastTime && (
+                    <Text style={[styles.broadcastTime, { color: yellowAccent }]}>{broadcastTime}</Text>
+                  )}
+                </View>
+                <Text style={[styles.broadcastText, { color: textColorPrimary }]}>
+                  {broadcastMessage}
+                </Text>
+            </View>
           </View>
         )}
+
+        {/* --- COMPACT STATS GRID (NOW INCLUDING F1 SCORE) --- */}
+        <View style={styles.statsGrid}>
+          <View style={[styles.smallStatCard, { backgroundColor: cardColor }]}>
+             <View style={styles.statIconWrapper}>
+                <Feather name="activity" size={18} color={blueAccent} />
+             </View>
+            <Text style={[styles.smallStatValue, { color: textColorPrimary }]}>{totalScans > 0 ? totalScans : '0'}</Text>
+            <Text style={[styles.smallStatLabel, { color: textColorSecondary }]}>TOTAL SCANS</Text>
+          </View>
+
+          <View style={[styles.smallStatCard, { backgroundColor: cardColor }]}>
+             <View style={styles.statIconWrapper}>
+                <MaterialCommunityIcons name="brain" size={18} color={greenAccent} />
+             </View>
+            <Text style={[styles.smallStatValue, { color: textColorPrimary }]}>95%</Text>
+            <Text style={[styles.smallStatLabel, { color: textColorSecondary }]}>RF MODEL F1 SCORE</Text>
+          </View>
+        </View>
 
         {/* --- DYNAMIC RECENT INTERCEPTION CARD --- */}
         {recentScan && (
           <View style={{ marginBottom: 32 }}>
-            <Text style={[styles.sectionTitle, { color: textColorPrimary }]}>Latest Interception Alert</Text>
+            <Text style={[styles.sectionTitle, { color: textColorPrimary }]}>Latest Interception</Text>
             
-            <View style={[styles.recentCard, { backgroundColor: cardColor, borderLeftColor: getAccentColor(recentScan.verdict) }]}>
+            <View style={[styles.recentCard, { backgroundColor: cardColor, borderColor: getAccentColor(recentScan.verdict), borderWidth: 1 }]}>
               
               {/* Header */}
               <View style={styles.recentHeader}>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Feather 
-                    name={recentScan.verdict === 'Phishing' ? 'shield-off' : 'shield'} 
-                    size={18} 
-                    color={getAccentColor(recentScan.verdict)} 
-                  />
+                  <View style={[styles.iconCircle, { backgroundColor: getAccentColor(recentScan.verdict) + '20' }]}>
+                    <Feather 
+                      name={recentScan.verdict === 'Phishing' ? 'alert-triangle' : 'shield'} 
+                      size={18} 
+                      color={getAccentColor(recentScan.verdict)} 
+                    />
+                  </View>
                   <Text style={[styles.recentVerdict, { color: getAccentColor(recentScan.verdict) }]}>
-                    {recentScan.verdict === 'Phishing' ? 'THREAT BLOCKED' : (recentScan.verdict === 'Suspicious' ? 'WARNING ISSUED' : 'SAFE LINK VERIFIED')}
+                    {recentScan.verdict.toUpperCase()}
                   </Text>
                 </View>
                 <Text style={{ fontSize: 11, color: textColorSecondary, fontWeight: 'bold' }}>{recentScan.date}</Text>
               </View>
               
               {/* Target URL */}
-              <Text style={[styles.recentUrl, { color: textColorPrimary }]} selectable={true}>{recentScan.url}</Text>
+              <Text style={[styles.recentUrl, { color: textColorPrimary }]} selectable={true} numberOfLines={1}>{recentScan.url}</Text>
               
               {/* Expanded Full Details Box */}
               <View style={[styles.detailsBox, { backgroundColor: detailsBg }]}>
-                
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                  <View style={[styles.badgeDot, { backgroundColor: getAccentColor(recentScan.verdict), width: 6, height: 6 }]} />
-                  <Text style={[styles.detailsProtocol, { color: textColorSecondary }]}>{recentScan.protocol}</Text>
-                </View>
-                
                 <Text style={[styles.detailsSummary, { color: textColorPrimary }]}>
                   {recentScan.summary}
                 </Text>
-                
-                <Text style={[styles.detailsTech, { color: textColorSecondary }]}>
-                  <Text style={{ fontWeight: '700' }}>AI Diagnostics: </Text>{recentScan.technicalDetails}
-                </Text>
-
-                {/* Metrics Row Inside Details */}
                 <View style={styles.recentMetricsRow}>
                    <View style={styles.recentMetricItem}>
                       <Text style={[styles.recentMetricLabel, { color: textColorSecondary }]}>PHISHING PROBABILITY</Text>
                       <Text style={[styles.recentMetricValue, { color: getAccentColor(recentScan.verdict) }]}>{recentScan.confidence}%</Text>
                    </View>
                    <View style={styles.recentMetricItem}>
-                      <Text style={[styles.recentMetricLabel, { color: textColorSecondary }]}>SCAN ID</Text>
-                      <Text style={[styles.recentMetricValue, { color: textColorPrimary }]}>{recentScan.id}</Text>
+                      <Text style={[styles.recentMetricLabel, { color: textColorSecondary }]}>PROTOCOL</Text>
+                      <Text style={[styles.recentMetricValue, { color: textColorPrimary }]}>{recentScan.protocol}</Text>
                    </View>
                 </View>
-
               </View>
 
               {/* Action Footer */}
-              <TouchableOpacity style={styles.recentFooter} onPress={() => router.push('/tabs/history')}>
-                <Text style={[styles.recentFooterText, { color: textColorSecondary }]}>VIEW FULL HISTORY LOG</Text>
+              <TouchableOpacity 
+                style={styles.recentFooter} 
+                onPress={() => router.push({ pathname: '/tabs/history', params: { openModalId: recentScan.id } })}
+              >
+                <Text style={[styles.recentFooterText, { color: textColorSecondary }]}>VIEW FULL LOG</Text>
                 <Feather name="arrow-right" size={16} color={textColorSecondary} />
               </TouchableOpacity>
             </View>
           </View>
         )}
 
-        {/* Main Status Card */}
-        <View style={[styles.mainCard, isDark && { borderWidth: 1, borderColor: '#2D4356' }]}>
-          <View style={styles.mainCardHeader}>
-            <MaterialCommunityIcons name="brain" size={16} color="#A9B4C0" />
-            <Text style={styles.mainCardHeaderText}>CORE DETECTION ENGINE</Text>
-          </View>
-          <Text style={styles.mainCardTitle}>SENTINEL AI</Text>
-          <Text style={styles.mainCardSubtitle}>Hybrid analysis pipeline active</Text>
-          
-          <View style={styles.metricsRow}>
-            <View style={[styles.metricBox, { backgroundColor: isDark ? '#121A21' : '#2A4158' }]}>
-              <Text style={styles.metricLabel}>RF MODEL{'\n'}F1 SCORE</Text>
-              <Text style={styles.metricValue}>95%</Text>
-            </View>
-            <View style={[styles.metricBox, { backgroundColor: isDark ? '#121A21' : '#2A4158' }]}>
-              <Text style={styles.metricLabel}>PROTOCOL{'\n'}DATABASES</Text>
-              <Text style={styles.metricValue}>SYNCED</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* --- THREAT LANDSCAPE BREAKDOWN --- */}
-        <Text style={[styles.sectionTitle, { color: textColorPrimary }]}>Threat Landscape</Text>
-        <View style={[styles.landscapeCard, { backgroundColor: cardColor }]}>
-          <View style={styles.progressItem}>
-            <View style={styles.progressHeader}>
-              <Text style={[styles.progressLabel, { color: textColorSecondary }]}>LEXICAL ANOMALIES</Text>
-              <Text style={[styles.progressValue, { color: redAccent }]}>High Risk</Text>
-            </View>
-            <View style={styles.progressBarBg}>
-              <View style={[styles.progressBarFill, { width: '85%', backgroundColor: redAccent }]} />
-            </View>
-          </View>
-          
-          <View style={[styles.progressItem, { marginBottom: 0 }]}>
-            <View style={styles.progressHeader}>
-              <Text style={[styles.progressLabel, { color: textColorSecondary }]}>DOMAIN REPUTATION</Text>
-              <Text style={[styles.progressValue, { color: greenAccent }]}>Stable</Text>
-            </View>
-            <View style={styles.progressBarBg}>
-              <View style={[styles.progressBarFill, { width: '25%', backgroundColor: greenAccent }]} />
-            </View>
-          </View>
-        </View>
-
-        {/* --- COMPACT STATS GRID --- */}
-        <View style={styles.statsGrid}>
-          <View style={[styles.smallStatCard, { backgroundColor: cardColor }]}>
-            <Feather name="activity" size={20} color={blueAccent} />
-            <Text style={[styles.smallStatValue, { color: textColorPrimary }]}>{totalScans > 0 ? totalScans : '0'}</Text>
-            <Text style={[styles.smallStatLabel, { color: textColorSecondary }]}>TOTAL SCANS</Text>
-          </View>
-          <View style={[styles.smallStatCard, { backgroundColor: cardColor }]}>
-            <MaterialCommunityIcons name="shield-check-outline" size={22} color={greenAccent} />
-            <Text style={[styles.smallStatValue, { color: textColorPrimary }]}>Active</Text>
-            <Text style={[styles.smallStatLabel, { color: textColorSecondary }]}>LIVE MONITORING</Text>
-          </View>
-        </View>
-
-        {/* --- SENTINEL BRIEFING (Security Tip) --- */}
-        <View style={[styles.tipCard, { backgroundColor: isDark ? '#1A242E' : '#E8EDF2', borderWidth: isDark ? 1 : 0, borderColor: '#2D4356' }]}>
-          <View style={[styles.tipIconWrapper, { backgroundColor: isDark ? '#2D4356' : '#FFFFFF' }]}>
-            <Ionicons name="bulb-outline" size={20} color={blueAccent} />
+        {/* --- NEW PHISHING TIPS SECTION --- */}
+        <Text style={[styles.sectionTitle, { color: textColorPrimary }]}>Anti-Phishing Tips</Text>
+        <View style={[styles.tipCard, { backgroundColor: cardColor }]}>
+          <View style={[styles.tipIconWrapper, { backgroundColor: blueAccent + '20' }]}>
+            <Ionicons name="shield-checkmark" size={24} color={blueAccent} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.tipTitle, { color: blueAccent }]}>SENTINEL BRIEFING</Text>
-            <Text style={[styles.tipText, { color: textColorPrimary }]}>
-              Suspicious URLs often use "punycode" to mimic real sites (e.g., googIe.com vs google.com). Always check the spelling.
+            <Text style={[styles.tipTitle, { color: textColorPrimary }]}>Check the Sender</Text>
+            <Text style={[styles.tipText, { color: textColorSecondary }]}>
+              Always verify the sender's email address. Phishers often use addresses that look similar to legitimate ones (e.g., @paypaI.com instead of @paypal.com).
+            </Text>
+          </View>
+        </View>
+
+        <View style={[styles.tipCard, { backgroundColor: cardColor }]}>
+          <View style={[styles.tipIconWrapper, { backgroundColor: greenAccent + '20' }]}>
+            <MaterialCommunityIcons name="link-lock" size={24} color={greenAccent} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.tipTitle, { color: textColorPrimary }]}>Don't Click Suspicious Links</Text>
+            <Text style={[styles.tipText, { color: textColorSecondary }]}>
+              Hover over links to see the actual URL before clicking. If it looks strange or unexpected, do not click it.
             </Text>
           </View>
         </View>
@@ -338,64 +303,47 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollContent: { padding: 24, paddingTop: 10, paddingBottom: 140 },
   
-  badgeContainer: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 20, marginBottom: 20 },
-  badgeDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
+  badgeContainer: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 16, marginBottom: 24 },
+  badgeDot: { width: 6, height: 6, borderRadius: 3, marginRight: 8 },
   badgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
   
   greetingText: { fontSize: 16, fontWeight: '700', marginBottom: 4 },
-  headerTitle: { fontSize: 38, fontWeight: '900', lineHeight: 42, letterSpacing: -0.5 },
+  headerTitle: { fontSize: 36, fontWeight: '900', lineHeight: 40, letterSpacing: -0.5 },
   
-  // --- BROADCAST STYLES ---
-  broadcastCard: { borderWidth: 1, borderLeftWidth: 4, borderRadius: 16, padding: 20, marginBottom: 32, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
-  broadcastHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  broadcastTitle: { fontSize: 12, fontWeight: '900', letterSpacing: 1.5, marginLeft: 8 },
-  broadcastTime: { fontSize: 10, fontWeight: '700', opacity: 0.8 },
-  broadcastText: { fontSize: 14, lineHeight: 22, fontWeight: '600', opacity: 0.9 },
+  // --- BROADCAST STYLES REDESIGNED ---
+  broadcastCard: { flexDirection: 'row', borderWidth: 1, borderRadius: 16, padding: 16, marginBottom: 32, alignItems: 'center' },
+  broadcastIconContainer: { marginRight: 16 },
+  broadcastHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  broadcastTitle: { fontSize: 11, fontWeight: '900', letterSpacing: 1 },
+  broadcastTime: { fontSize: 9, fontWeight: '700', opacity: 0.7 },
+  broadcastText: { fontSize: 13, lineHeight: 18, fontWeight: '500' },
 
-  mainCard: { backgroundColor: '#1E3246', borderRadius: 24, padding: 24, marginBottom: 32, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 8 },
-  mainCardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  mainCardHeaderText: { color: '#A9B4C0', fontSize: 11, fontWeight: '800', marginLeft: 8, letterSpacing: 1.5 },
-  mainCardTitle: { color: '#FFF', fontSize: 32, fontWeight: '900', letterSpacing: -0.5 },
-  mainCardSubtitle: { color: '#A9B4C0', fontSize: 14, marginBottom: 24, fontWeight: '500' },
-  metricsRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  metricBox: { borderRadius: 16, padding: 16, flex: 0.48 },
-  metricLabel: { color: '#A9B4C0', fontSize: 10, fontWeight: '800', letterSpacing: 0.5, marginBottom: 8, lineHeight: 14 },
-  metricValue: { color: '#FFF', fontSize: 22, fontWeight: '900' },
-  
   sectionTitle: { fontSize: 18, fontWeight: '800', marginBottom: 16, letterSpacing: -0.5 },
   
-  landscapeCard: { borderRadius: 24, padding: 24, marginBottom: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
-  progressItem: { marginBottom: 20 },
-  progressHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
-  progressLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
-  progressValue: { fontSize: 11, fontWeight: '800' },
-  progressBarBg: { height: 8, backgroundColor: 'rgba(150,150,150,0.15)', borderRadius: 4, overflow: 'hidden' },
-  progressBarFill: { height: '100%', borderRadius: 4 },
-
-  recentCard: { borderRadius: 20, padding: 20, borderLeftWidth: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
-  recentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  recentVerdict: { fontSize: 12, fontWeight: '900', letterSpacing: 0.5, marginLeft: 8 },
-  recentUrl: { fontSize: 18, fontWeight: '700', marginBottom: 16, letterSpacing: -0.5 },
+  recentCard: { borderRadius: 20, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
+  recentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  iconCircle: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  recentVerdict: { fontSize: 13, fontWeight: '900', letterSpacing: 0.5 },
+  recentUrl: { fontSize: 16, fontWeight: '600', marginBottom: 16, letterSpacing: -0.5 },
   
-  detailsBox: { padding: 16, borderRadius: 16, marginBottom: 16 },
-  detailsProtocol: { fontSize: 10, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' },
-  detailsSummary: { fontSize: 14, fontWeight: '600', lineHeight: 20, marginBottom: 8 },
-  detailsTech: { fontSize: 12, fontWeight: '400', lineHeight: 18, opacity: 0.8 },
-  recentMetricsRow: { flexDirection: 'row', marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(150,150,150,0.1)' },
+  detailsBox: { padding: 16, borderRadius: 12, marginBottom: 16 },
+  detailsSummary: { fontSize: 13, fontWeight: '500', lineHeight: 20, marginBottom: 12 },
+  recentMetricsRow: { flexDirection: 'row', paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(150,150,150,0.1)' },
   recentMetricItem: { flex: 1 },
   recentMetricLabel: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5, marginBottom: 4 },
-  recentMetricValue: { fontSize: 16, fontWeight: '900' },
+  recentMetricValue: { fontSize: 14, fontWeight: '800' },
 
   recentFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: 'rgba(150,150,150,0.1)', paddingTop: 16 },
   recentFooterText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
 
-  statsGrid: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24 },
-  smallStatCard: { flex: 0.48, padding: 20, borderRadius: 24, alignItems: 'flex-start', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
-  smallStatValue: { fontSize: 24, fontWeight: '900', marginTop: 12, letterSpacing: -0.5 },
-  smallStatLabel: { fontSize: 10, fontWeight: '800', marginTop: 4, letterSpacing: 0.5 },
+  statsGrid: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 32 },
+  smallStatCard: { flex: 0.48, padding: 20, borderRadius: 20, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
+  statIconWrapper: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(150,150,150,0.1)', justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
+  smallStatValue: { fontSize: 22, fontWeight: '900', letterSpacing: -0.5, marginBottom: 4 },
+  smallStatLabel: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
 
-  tipCard: { flexDirection: 'row', padding: 20, borderRadius: 24, marginBottom: 10, alignItems: 'center' },
-  tipIconWrapper: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginRight: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
-  tipTitle: { fontSize: 11, fontWeight: '900', letterSpacing: 1, marginBottom: 6 },
-  tipText: { fontSize: 13, lineHeight: 20, fontWeight: '500', opacity: 0.9 },
+  tipCard: { flexDirection: 'row', padding: 20, borderRadius: 20, marginBottom: 16, alignItems: 'flex-start', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 8, elevation: 2 },
+  tipIconWrapper: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', marginRight: 16 },
+  tipTitle: { fontSize: 14, fontWeight: '800', marginBottom: 6 },
+  tipText: { fontSize: 12, lineHeight: 18, fontWeight: '500' },
 });

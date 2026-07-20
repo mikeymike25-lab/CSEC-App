@@ -4,8 +4,11 @@ import React, { forwardRef, useEffect, useImperativeHandle, useState } from 'rea
 import { Linking, Modal, StyleSheet, View } from 'react-native';
 import { getAuth } from 'firebase/auth'; 
 import { FlagContent, FlagType } from './FlagModals';
+import * as WebBrowser from 'expo-web-browser';
 
-const API_URL = 'https://scaling-fortnight-pjwxgqgjxjxrcr466-5000.app.github.dev/analyze-link';
+const API_URL = process.env.EXPO_PUBLIC_API_URL 
+  ? `${process.env.EXPO_PUBLIC_API_URL}/analyze-link` 
+  : 'http://localhost:5000/analyze-link';
 
 export interface LinkInterceptorRef {
   triggerTestScan: (testUrl: string, testType: FlagType) => void;
@@ -16,9 +19,11 @@ const LinkInterceptor = forwardRef<LinkInterceptorRef, {}>((props, ref) => {
   const [type, setType] = useState<FlagType>('scanning');
   const [url, setUrl] = useState('');
   
-  // NEW STATES: Tracking cache and list-based filtering
   const [isCached, setIsCached] = useState(false);
   const [protocol, setProtocol] = useState('');
+  const [summary, setSummary] = useState('');
+  const [technicalDetails, setTechnicalDetails] = useState('');
+  const [sentinelAnalysis, setSentinelAnalysis] = useState('');
   
   const router = useRouter();
 
@@ -33,7 +38,7 @@ const LinkInterceptor = forwardRef<LinkInterceptorRef, {}>((props, ref) => {
   }));
 
   // THE REAL SENTINEL ENGINE INTEGRATION
-  const analyzeUrlWithCSEC = async (targetUrl: string): Promise<{ type: FlagType, cached: boolean, proto: string }> => {
+  const analyzeUrlWithCSEC = async (targetUrl: string): Promise<{ type: FlagType, cached: boolean, proto: string, summary?: string, technicalDetails?: string, sentinelAnalysis?: string }> => {
     try {
       // --- VERIFICATION LOCKDOWN ---
       const auth = getAuth();
@@ -58,7 +63,7 @@ const LinkInterceptor = forwardRef<LinkInterceptorRef, {}>((props, ref) => {
           if (cachedMatch.verdict === 'Suspicious') cachedType = 'warning';
           
           // Return the cached flag!
-          return { type: cachedType, cached: true, proto: cachedMatch.protocol };
+          return { type: cachedType, cached: true, proto: cachedMatch.protocol, summary: cachedMatch.summary, technicalDetails: cachedMatch.technicalDetails, sentinelAnalysis: cachedMatch.sentinelAnalysis };
         }
       }
 
@@ -95,6 +100,7 @@ const LinkInterceptor = forwardRef<LinkInterceptorRef, {}>((props, ref) => {
       let currentConfidence = phishingProb.toFixed(1);
       let currentSummary = '';
       let currentTech = '';
+      let currentSentinel = data.sentinel_analysis || 'AI Analysis unavailable at this time.';
       let currentProtocol = serverProtocol;
       let uiType: FlagType = 'safe';
 
@@ -145,10 +151,11 @@ const LinkInterceptor = forwardRef<LinkInterceptorRef, {}>((props, ref) => {
         protocol: currentProtocol, 
         confidence: currentConfidence, 
         summary: currentSummary, 
-        technicalDetails: currentTech 
+        technicalDetails: currentTech,
+        sentinelAnalysis: currentSentinel
       });
 
-      return { type: uiType, cached: false, proto: currentProtocol };
+      return { type: uiType, cached: false, proto: currentProtocol, summary: currentSummary, technicalDetails: currentTech, sentinelAnalysis: currentSentinel };
 
     } catch (error) {
       console.error("Engine Error:", error);
@@ -174,6 +181,9 @@ const LinkInterceptor = forwardRef<LinkInterceptorRef, {}>((props, ref) => {
       setType(result.type); 
       setIsCached(result.cached);   // Update Cache State
       setProtocol(result.proto);    // Update Protocol State
+      setSummary(result.summary || '');
+      setTechnicalDetails(result.technicalDetails || '');
+      setSentinelAnalysis(result.sentinelAnalysis || '');
     };
 
     const checkInitialUrl = async () => {
@@ -205,11 +215,20 @@ const LinkInterceptor = forwardRef<LinkInterceptorRef, {}>((props, ref) => {
         protocol: resultData.protocol,
         confidence: resultData.confidence,
         summary: resultData.summary,
-        technicalDetails: resultData.technicalDetails
+        technicalDetails: resultData.technicalDetails,
+        sentinelAnalysis: resultData.sentinelAnalysis
       };
 
       const updatedHistory = [historyItem, ...history]; 
       await AsyncStorage.setItem('csec_history', JSON.stringify(updatedHistory));
+      
+      // Update home screen widget
+      try {
+        const { updateWidget } = require('../widget/WidgetTaskHandler');
+        updateWidget();
+      } catch (err) {
+        console.error("Widget Update Failed:", err);
+      }
       
     } catch (e) {
       console.error("History Save Failed:", e);
@@ -229,9 +248,12 @@ const LinkInterceptor = forwardRef<LinkInterceptorRef, {}>((props, ref) => {
           url={url}
           isCached={isCached}   // Pass down cache status
           protocol={protocol}   // Pass down protocol
-          onProceed={() => {
+          summary={summary}     // Pass down summary
+          technicalDetails={technicalDetails} // Pass down technical details
+          sentinelAnalysis={sentinelAnalysis} // Pass down sentinel analysis
+          onProceed={async () => {
             setVisible(false);
-            Linking.openURL(url);
+            await WebBrowser.openBrowserAsync(url);
           }}
           onClose={() => setVisible(false)}
           onViewDetails={() => {

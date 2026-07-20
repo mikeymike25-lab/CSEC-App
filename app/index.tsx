@@ -21,6 +21,7 @@ import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { GoogleAuthProvider, signInWithCredential, signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore'; 
 import { auth, db } from '../firebaseConfig';
+import { Platform } from 'react-native';
 
 // --- THEME CONTEXT ---
 import { useTheme } from '../context/ThemeContext';
@@ -101,11 +102,18 @@ export default function LoginScreen() {
 
   // --- REAL-TIME LISTENER FOR MAINTENANCE MODE ---
   useEffect(() => {
-    const unsub = onSnapshot(doc(db, 'system', 'config'), (docSnap) => {
-      if (docSnap.exists()) {
-        setIsMaintenance(docSnap.data().maintenanceMode === true);
+    const unsub = onSnapshot(
+      doc(db, 'system', 'config'), 
+      (docSnap) => {
+        if (docSnap.exists()) {
+          setIsMaintenance(docSnap.data().maintenanceMode === true);
+        }
+      },
+      (error) => {
+        // Silently suppress the error on unauthenticated config reads
+        console.warn("Config Read Blocked by Rules:", error.code);
       }
-    });
+    );
     return () => unsub();
   }, []);
 
@@ -200,8 +208,7 @@ export default function LoginScreen() {
     }
   };
 
-  return (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+  const content = (
       <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]}>
         <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={bgColor} />
         
@@ -285,6 +292,15 @@ export default function LoginScreen() {
 
         </View>
       </SafeAreaView>
+  );
+
+  if (Platform.OS === 'web') {
+    return content;
+  }
+
+  return (
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      {content}
     </TouchableWithoutFeedback>
   );
 }

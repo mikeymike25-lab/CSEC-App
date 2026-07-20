@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "CSEC",
-    "slug": "CSEC",
+    "slug": "C-SEC",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/CSEC.png",
@@ -62,7 +62,21 @@
           }
         }
       ],
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "CsecWidget",
+              "label": "C-SEC History",
+              "minWidth": "320dp",
+              "minHeight": "120dp",
+              "description": "View recent scanned URLs"
+            }
+          ]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

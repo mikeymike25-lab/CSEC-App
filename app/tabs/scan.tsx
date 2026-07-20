@@ -34,6 +34,7 @@ export default function ScanScreen() {
   const [technicalDetails, setTechnicalDetails] = useState('');
   const [confidence, setConfidence] = useState('0'); 
   const [protocol, setProtocol] = useState(''); 
+  const [sentinelAnalysis, setSentinelAnalysis] = useState('');
   const [isCached, setIsCached] = useState(false);
 
   // --- MODAL & SECURITY STATES ---
@@ -104,6 +105,7 @@ export default function ScanScreen() {
         confidence: resultData.confidence,
         summary: resultData.summary, 
         technicalDetails: resultData.technicalDetails,
+        sentinelAnalysis: resultData.sentinelAnalysis,
       };
 
       const updatedHistory = [newEntry, ...history];
@@ -144,6 +146,7 @@ export default function ScanScreen() {
     setSummary('');
     setTechnicalDetails('');
     setProtocol('');
+    setSentinelAnalysis('');
     setIsCached(false);
 
     try {
@@ -160,6 +163,7 @@ export default function ScanScreen() {
           setConfidence(cachedMatch.confidence);
           setSummary(cachedMatch.summary);
           setTechnicalDetails(`[Retrieved from Local Cache] ${cachedMatch.technicalDetails}`);
+          setSentinelAnalysis(cachedMatch.sentinelAnalysis || 'No AI analysis saved for this scan.');
           setIsScanning(false);
           return; 
         }
@@ -167,13 +171,14 @@ export default function ScanScreen() {
 
       // --- SERVER ARCHITECTURE ---
       if (deepAiEnabled) {
-        const apiUrl = 'https://scaling-fortnight-pjwxgqgjxjxrcr466-5000.app.github.dev/analyze-link'; 
+        const apiUrl = 'https://shiny-teams-share.loca.lt/analyze-link';
 
         const response = await fetch(apiUrl, {
           method: 'POST',
           headers: {
             'Accept': 'application/json',
             'Content-Type': 'application/json',
+            'Bypass-Tunnel-Reminder': 'true'
           },
           body: JSON.stringify({ url: cleanUrl }), 
         });
@@ -243,13 +248,15 @@ export default function ScanScreen() {
           setConfidence(currentConfidence);
           setSummary(currentSummary);
           setTechnicalDetails(currentTech);
+          setSentinelAnalysis(data.sentinel_analysis || 'AI Analysis unavailable at this time.');
 
           saveScanToHistory({ 
             verdict: currentVerdict, 
             protocol: currentProtocol, 
             confidence: currentConfidence, 
             summary: currentSummary, 
-            technicalDetails: currentTech 
+            technicalDetails: currentTech,
+            sentinelAnalysis: data.sentinel_analysis
           });
 
         } else {
@@ -385,6 +392,31 @@ export default function ScanScreen() {
               <View style={[styles.infoBox, { backgroundColor: infoBoxBg }]}>
                 <Feather name="info" size={18} color={textColorPrimary} style={styles.infoIcon} />
                 <Text style={[styles.infoText, { color: textColorPrimary }]}>{summary}</Text>
+              </View>
+
+              <Text style={[styles.sectionLabel, { color: textColorSecondary, marginTop: 24 }]}>THE CSEC SENTINEL ANALYSIS</Text>
+              <View style={[
+                styles.techBox, 
+                { backgroundColor: isDark ? '#1A2A3A' : '#E8F4F8', borderLeftColor: '#3B82F6' }
+              ]}>
+                <View style={styles.techBoxHeader}>
+                  <MaterialCommunityIcons 
+                    name="robot-outline" 
+                    size={16} 
+                    color="#3B82F6" 
+                  />
+                  <Text style={[styles.techBoxTitle, { color: '#3B82F6' }]}>
+                    AI SECURITY EXPERT
+                  </Text>
+                </View>
+                <Text style={[styles.techBoxText, { color: isDark ? '#D1D5DB' : '#4B5563', fontStyle: 'italic' }]}>
+                  {sentinelAnalysis.split(/(\*\*.*?\*\*)/g).map((part, index) => {
+                    if (part.startsWith('**') && part.endsWith('**')) {
+                      return <Text key={index} style={{ fontWeight: 'bold' }}>{part.replace(/\*\*/g, '')}</Text>;
+                    }
+                    return <Text key={index}>{part}</Text>;
+                  })}
+                </Text>
               </View>
 
               <Text style={[styles.sectionLabel, { color: textColorSecondary, marginTop: 24 }]}>TECHNICAL DETAILS</Text>

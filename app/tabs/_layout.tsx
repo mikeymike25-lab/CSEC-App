@@ -122,6 +122,8 @@ export default function TabLayout() {
           }
         }
       }
+    }, (error) => {
+      console.warn("System Config Lockdown Stream blocked:", error.code);
     });
 
     return () => unsubConfig();
@@ -208,6 +210,15 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
+          name="gemini"
+          options={{
+            title: 'Chatbot',
+            tabBarIcon: ({ focused }) => (
+              <TabIcon name="chat-processing-outline" label="CHATBOT" focused={focused} isDark={isDark} />
+            ),
+          }}
+        />
+        <Tabs.Screen
           name="history"
           options={{
             title: 'History',
@@ -227,13 +238,6 @@ export default function TabLayout() {
         />
 
         {/* --- HIDDEN TABS --- */}
-        <Tabs.Screen 
-          name="security" 
-          options={{ 
-            headerTitle: 'Security Preferences',
-            href: null, 
-          }} 
-        />
       </Tabs>
     </>
   );
