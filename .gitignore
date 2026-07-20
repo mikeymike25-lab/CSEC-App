@@ -12,9 +12,7 @@ wheels/
 .venv/
 backend/.venv/
 
-# Heavy ML Models & Datasets
-backend/models/*.pkl
-backend/data/*.csv
+# Heavy ML Models & Datasets (Removed so they can be pushed to Render)
 
 # Node & Expo
 node_modules/
