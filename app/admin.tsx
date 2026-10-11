@@ -43,6 +43,7 @@ export default function AdminScreen() {
   // --- NEW FEATURE STATES ---
   const [threatUrl, setThreatUrl] = useState('');
   const [threatCounts, setThreatCounts] = useState({ whitelist: 0, blacklist: 0 });
+  const [threatLists, setThreatLists] = useState<{ whitelist: string[]; blacklist: string[] }>({ whitelist: [], blacklist: [] });
   const [broadcastMessage, setBroadcastMessage] = useState('');
   const [auditLogs, setAuditLogs] = useState<string[]>([
     `[${new Date().toLocaleTimeString('en-US', { hour12: false })}] SYSTEM: Secure connection established.`,
@@ -166,9 +167,10 @@ export default function AdminScreen() {
     const unsubThreat = onSnapshot(doc(db, 'system', 'threat_intel'), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        const wl = Array.isArray(data?.whitelist) ? data.whitelist.length : 0;
-        const bl = Array.isArray(data?.blacklist) ? data.blacklist.length : 0;
-        setThreatCounts({ whitelist: wl, blacklist: bl });
+        const wl = Array.isArray(data?.whitelist) ? (data.whitelist as string[]) : [];
+        const bl = Array.isArray(data?.blacklist) ? (data.blacklist as string[]) : [];
+        setThreatCounts({ whitelist: wl.length, blacklist: bl.length });
+        setThreatLists({ whitelist: wl, blacklist: bl });
       }
     });
 
@@ -378,7 +380,7 @@ export default function AdminScreen() {
   const handleExportData = async (format: 'csv' | 'json') => {
     setIsExporting(true);
     try {
-      const { dataString, filename, count } = await exportThreatIntelData(format);
+      const { dataString, filename, count } = await exportThreatIntelData(format, allVerifiedLinks);
       if (count === 0) {
         Alert.alert("No Records", "There are currently no verified links to export.");
         return;
@@ -506,12 +508,58 @@ export default function AdminScreen() {
     return successAccent; 
   };
 
+  // Computed authoritative list of all verified / overridden links, merging Database 1 with active system/threat_intel arrays
+  const allVerifiedLinks: VerifiedLink[] = React.useMemo(() => {
+    const combined: VerifiedLink[] = [...verifiedLinks];
+    const existingDomains = new Set(combined.map(l => (l.domain || '').toLowerCase().trim()));
+
+    // Merge legacy whitelist entries so they are immediately visible and manageable
+    for (const d of threatLists.whitelist) {
+      const clean = (d || '').toLowerCase().trim();
+      if (clean && !existingDomains.has(clean)) {
+        combined.push({
+          id: 'threat-wl-' + clean.replace(/[^a-zA-Z0-9_-]/g, '_'),
+          url: clean.startsWith('http') ? clean : `https://${clean}`,
+          domain: clean,
+          verdict: 'Safe',
+          category: 'Authoritative Whitelist',
+          confidence: 100,
+          verifiedBy: 'Threat Matrix Override',
+          verifiedAt: new Date().toISOString(),
+          notes: 'Active domain in system whitelist matrix'
+        });
+        existingDomains.add(clean);
+      }
+    }
+
+    // Merge legacy blacklist entries
+    for (const d of threatLists.blacklist) {
+      const clean = (d || '').toLowerCase().trim();
+      if (clean && !existingDomains.has(clean)) {
+        combined.push({
+          id: 'threat-bl-' + clean.replace(/[^a-zA-Z0-9_-]/g, '_'),
+          url: clean.startsWith('http') ? clean : `https://${clean}`,
+          domain: clean,
+          verdict: 'Phishing',
+          category: 'Authoritative Blacklist',
+          confidence: 100,
+          verifiedBy: 'Threat Matrix Override',
+          verifiedAt: new Date().toISOString(),
+          notes: 'Active domain in system blacklist matrix'
+        });
+        existingDomains.add(clean);
+      }
+    }
+
+    return combined;
+  }, [verifiedLinks, threatLists]);
+
   // Reconciled counts connecting Threat Intelligence Matrix & Researcher Triage Pipeline
-  const verifiedSafeCount = verifiedLinks.filter(l => l.verdict === 'Safe').length;
-  const verifiedPhishingCount = verifiedLinks.filter(l => l.verdict === 'Phishing').length;
+  const verifiedSafeCount = allVerifiedLinks.filter(l => l.verdict === 'Safe').length;
+  const verifiedPhishingCount = allVerifiedLinks.filter(l => l.verdict === 'Phishing').length;
   const displayWhitelistCount = Math.max(threatCounts.whitelist, verifiedSafeCount);
   const displayBlacklistCount = Math.max(threatCounts.blacklist, verifiedPhishingCount);
-  const displayTotalOverrides = Math.max(verifiedLinks.length, displayWhitelistCount + displayBlacklistCount);
+  const displayTotalOverrides = allVerifiedLinks.length;
 
   const pendingTriageCount = triageTickets.filter(t => t.status === 'pending').length;
   const resolvedTriageCount = triageTickets.filter(t => t.status === 'resolved').length;
@@ -604,6 +652,75 @@ export default function AdminScreen() {
                 <Text style={[styles.halfButtonText, { color: dangerAccent }]}>Force Blacklist</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Direct Inline Preview of Active Matrix Overrides */}
+            {allVerifiedLinks.length > 0 && (
+              <View style={{ marginTop: 14, backgroundColor: inputBgColor, padding: 12, borderRadius: 14 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 0.5, color: textColorSecondary }}>
+                    ACTIVE MATRIX OVERRIDES ({allVerifiedLinks.length})
+                  </Text>
+                  <TouchableOpacity onPress={() => setIsVerifiedLinksVisible(true)}>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#4DA8DA' : '#0284C7' }}>
+                      View All &rarr;
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={{ gap: 6 }}>
+                  {allVerifiedLinks.slice(0, 4).map((link) => (
+                    <View 
+                      key={link.id} 
+                      style={{ 
+                        flexDirection: 'row', 
+                        alignItems: 'center', 
+                        justifyContent: 'space-between', 
+                        backgroundColor: cardColor, 
+                        paddingVertical: 8, 
+                        paddingHorizontal: 12, 
+                        borderRadius: 10,
+                        borderLeftWidth: 3,
+                        borderLeftColor: link.verdict === 'Safe' ? successAccent : dangerAccent
+                      }}
+                    >
+                      <View style={{ flex: 1, marginRight: 8 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: textColorPrimary }} numberOfLines={1}>
+                          {link.domain}
+                        </Text>
+                        <Text style={{ fontSize: 10, color: textColorSecondary }} numberOfLines={1}>
+                          {link.category || (link.verdict === 'Safe' ? 'Whitelisted' : 'Blacklisted')}
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <View style={{ backgroundColor: link.verdict === 'Safe' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6 }}>
+                          <Text style={{ color: link.verdict === 'Safe' ? successAccent : dangerAccent, fontSize: 10, fontWeight: '800' }}>
+                            {link.verdict.toUpperCase()}
+                          </Text>
+                        </View>
+                        <TouchableOpacity onPress={() => handleCopyLink(link.url)} style={{ padding: 4 }}>
+                          <Feather name={copiedUrl === link.url ? "check" : "copy"} size={13} color={copiedUrl === link.url ? successAccent : textColorSecondary} />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => handleOpenClassEditorForVerified(link)} style={{ padding: 4 }}>
+                          <Feather name="edit-3" size={13} color={isDark ? '#4DA8DA' : '#0284C7'} />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => handleRemoveVerified(link)} style={{ padding: 4 }}>
+                          <Feather name="trash-2" size={13} color={dangerAccent} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))}
+                  {allVerifiedLinks.length > 4 && (
+                    <TouchableOpacity 
+                      onPress={() => setIsVerifiedLinksVisible(true)}
+                      style={{ alignSelf: 'center', marginTop: 4 }}
+                    >
+                      <Text style={{ fontSize: 11, fontWeight: '600', color: textColorSecondary }}>
+                        + {allVerifiedLinks.length - 4} more in Manage modal
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            )}
 
             <View style={[styles.divider, { backgroundColor: isDark ? '#2D4356' : '#F2F0E4', marginVertical: 14 }]} />
 
@@ -921,13 +1038,18 @@ export default function AdminScreen() {
         </Modal>
 
         {/* --- DATABASE 1: VERIFIED LINKS & EXPORT MODAL --- */}
-        <Modal visible={isVerifiedLinksVisible} animationType="slide" presentationStyle="pageSheet">
+        <Modal 
+          visible={isVerifiedLinksVisible} 
+          animationType="slide" 
+          presentationStyle="pageSheet"
+          onRequestClose={() => setIsVerifiedLinksVisible(false)}
+        >
           <View style={[styles.modalContainer, { backgroundColor: bgColor }]}>
             <View style={[styles.modalHeader, { backgroundColor: cardColor }]}>
               <View>
                 <Text style={[styles.modalTitle, { color: textColorPrimary }]}>Verified Threat Matrix</Text>
                 <Text style={[styles.headerSubtitle, { color: textColorSecondary, marginTop: 2 }]}>
-                  Database 1: {verifiedLinks.length} Authoritative Ground Truth Links
+                  Database 1: {allVerifiedLinks.length} Authoritative Ground Truth Links
                 </Text>
               </View>
               <TouchableOpacity onPress={() => setIsVerifiedLinksVisible(false)} style={styles.closeBtn}>
@@ -950,12 +1072,12 @@ export default function AdminScreen() {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20 }}>
-              {verifiedLinks.filter(l => (l.domain || '').toLowerCase().includes(verifiedSearch.toLowerCase()) || (l.url || '').toLowerCase().includes(verifiedSearch.toLowerCase())).length === 0 ? (
+              {allVerifiedLinks.filter(l => (l.domain || '').toLowerCase().includes(verifiedSearch.toLowerCase()) || (l.url || '').toLowerCase().includes(verifiedSearch.toLowerCase())).length === 0 ? (
                 <Text style={{ color: textColorSecondary, textAlign: 'center', marginTop: 40, fontSize: 16 }}>
                   No verified links found in Database 1.
                 </Text>
               ) : (
-                verifiedLinks
+                allVerifiedLinks
                   .filter(l => (l.domain || '').toLowerCase().includes(verifiedSearch.toLowerCase()) || (l.url || '').toLowerCase().includes(verifiedSearch.toLowerCase()))
                   .map((link) => (
                     <View 
@@ -1477,7 +1599,7 @@ const styles = StyleSheet.create({
   statValue: { fontSize: 24, fontWeight: 'bold' },
   
   // MODAL STYLES
-  modalContainer: { flex: 1 },
+  modalContainer: { flex: 1, height: '100%' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingTop: 50, borderBottomWidth: 1, borderBottomColor: 'rgba(150,150,150,0.1)' },
   modalTitle: { fontSize: 24, fontWeight: '800' },
   closeBtn: { padding: 5 },

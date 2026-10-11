@@ -255,7 +255,12 @@ export async function removeVerifiedLink(docId: string, domain: string, verdict:
   const threatDocRef = doc(db, 'system', 'threat_intel');
   const listKey = verdict === 'Safe' ? 'whitelist' : 'blacklist';
 
-  await deleteDoc(doc(db, 'verified_links', docId));
+  try {
+    await deleteDoc(doc(db, 'verified_links', docId));
+  } catch (err) {
+    console.warn("deleteDoc notice:", err);
+  }
+
   await updateDoc(threatDocRef, {
     [listKey]: arrayRemove(domain),
     updatedAt: new Date().toISOString()
@@ -291,13 +296,20 @@ export async function updateLinkClassification(
  * EXPORT THREAT INTEL DATA (JSON or CSV)
  * Extracts all verified links with complete audit trail.
  */
-export async function exportThreatIntelData(format: 'csv' | 'json' = 'csv'): Promise<{ dataString: string; count: number; filename: string }> {
-  const snap = await getDocs(collection(db, 'verified_links'));
-  const links: VerifiedLink[] = [];
+export async function exportThreatIntelData(
+  format: 'csv' | 'json' = 'csv',
+  overrideLinks?: VerifiedLink[]
+): Promise<{ dataString: string; count: number; filename: string }> {
+  let links: VerifiedLink[] = [];
 
-  snap.forEach(d => {
-    links.push(d.data() as VerifiedLink);
-  });
+  if (overrideLinks && overrideLinks.length > 0) {
+    links = overrideLinks;
+  } else {
+    const snap = await getDocs(collection(db, 'verified_links'));
+    snap.forEach(d => {
+      links.push(d.data() as VerifiedLink);
+    });
+  }
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 
