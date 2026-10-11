@@ -390,6 +390,7 @@ export default function SignupScreen() {
       <TermsModal
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
+        mode="terms"
         onAccept={() => {
           setAgreeToTerms(true);
           setErrors({ ...errors, terms: '' });

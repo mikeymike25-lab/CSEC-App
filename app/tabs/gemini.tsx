@@ -133,50 +133,8 @@ export default function GeminiScreen() {
             <MaterialCommunityIcons name="chat-processing-outline" size={24} color={isDark ? '#4DA8DA' : '#2563EB'} />
             <Text style={[styles.headerTitle, { color: textColorPrimary }]}>Chatbot</Text>
           </View>
-          <TouchableOpacity
-            style={[
-              styles.aiTermsBtn,
-              {
-                backgroundColor: isDark ? 'rgba(77, 168, 218, 0.15)' : '#EFF6FF',
-                borderColor: isDark ? '#4DA8DA' : '#93C5FD',
-              },
-            ]}
-            onPress={() => setIsTermsModalVisible(true)}
-            activeOpacity={0.7}
-          >
-            <MaterialCommunityIcons
-              name="shield-check-outline"
-              size={13}
-              color={isDark ? '#4DA8DA' : '#2563EB'}
-              style={{ marginRight: 4 }}
-            />
-            <Text style={[styles.aiTermsBtnText, { color: isDark ? '#4DA8DA' : '#2563EB' }]}>AI Terms</Text>
-          </TouchableOpacity>
         </View>
         <Text style={[styles.headerSubtitle, { color: textColorSecondary }]}>Advanced AI Threat Expert</Text>
-
-        {/* AI Disclaimer / Safety Banner */}
-        <TouchableOpacity
-          style={[
-            styles.aiNoticeBanner,
-            {
-              backgroundColor: isDark ? 'rgba(2, 132, 199, 0.1)' : '#F0F9FF',
-              borderColor: isDark ? 'rgba(56, 189, 248, 0.25)' : '#BAE6FD',
-            },
-          ]}
-          onPress={() => setIsTermsModalVisible(true)}
-          activeOpacity={0.7}
-        >
-          <MaterialCommunityIcons
-            name="information"
-            size={14}
-            color={isDark ? '#38BDF8' : '#0284C7'}
-            style={{ marginRight: 6 }}
-          />
-          <Text style={[styles.aiNoticeText, { color: isDark ? '#94A3B8' : '#0369A1' }]}>
-            AI output is advisory. Do not share credentials. <Text style={{ textDecorationLine: 'underline', fontWeight: 'bold' }}>View AI Terms</Text>
-          </Text>
-        </TouchableOpacity>
       </View>
 
       <ScrollView 
@@ -219,7 +177,7 @@ export default function GeminiScreen() {
         )}
       </ScrollView>
 
-      <View style={[styles.inputContainer, { backgroundColor: bgColor, paddingBottom: isKeyboardVisible ? 10 : 80 }]}>
+      <View style={[styles.inputContainer, { backgroundColor: bgColor, paddingBottom: isKeyboardVisible ? 10 : 75 }]}>
         <View style={[styles.inputWrapper, { backgroundColor: inputBg }]}>
           <TextInput
             style={[styles.input, { color: textColorPrimary }]}
@@ -238,11 +196,24 @@ export default function GeminiScreen() {
             <Feather name="send" size={16} color="#FFF" />
           </TouchableOpacity>
         </View>
+
+        {/* --- SIMPLE AI DISCLAIMER (LIKE GEMINI / CHATGPT) --- */}
+        <View style={styles.disclaimerContainer}>
+          <Text style={[styles.disclaimerText, { color: textColorSecondary }]}>
+            The Sentinel can make mistakes. Verify important info. •{' '}
+            <Text 
+              style={[styles.disclaimerLink, { color: isDark ? '#4DA8DA' : '#2563EB' }]}
+              onPress={() => setIsTermsModalVisible(true)}
+            >
+              AI Terms
+            </Text>
+          </Text>
+        </View>
       </View>
       <TermsModal
         visible={isTermsModalVisible}
         onClose={() => setIsTermsModalVisible(false)}
-        defaultToAiTab={true}
+        mode="ai"
       />
     </KeyboardAvoidingView>
   );
@@ -255,10 +226,23 @@ const styles = StyleSheet.create({
   headerTitleContainer: { flexDirection: 'row', alignItems: 'center' },
   headerTitle: { fontSize: 24, fontWeight: '800', marginLeft: 8 },
   headerSubtitle: { fontSize: 12, marginTop: 2, opacity: 0.8 },
-  aiTermsBtn: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4 },
-  aiTermsBtnText: { fontSize: 11, fontWeight: '700' },
-  aiNoticeBanner: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, marginTop: 8 },
-  aiNoticeText: { fontSize: 11, flex: 1, lineHeight: 15 },
+
+  disclaimerContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 8,
+    paddingHorizontal: 16,
+  },
+  disclaimerText: {
+    fontSize: 11,
+    textAlign: 'center',
+    letterSpacing: 0.1,
+  },
+  disclaimerLink: {
+    fontSize: 11,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
+  },
   
   chatArea: { flex: 1 },
   messageWrapper: { flexDirection: 'row', marginBottom: 20, alignItems: 'flex-end' },

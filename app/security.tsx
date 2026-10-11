@@ -64,6 +64,7 @@ export default function SecurityScreen() {
 
   // Legal / Terms Modal State
   const [isTermsModalVisible, setIsTermsModalVisible] = useState(false);
+  const [termsModalMode, setTermsModalMode] = useState<'terms' | 'ai'>('terms');
 
   // --- DYNAMIC COLORS ---
   const bgColor = isDark ? '#121A21' : '#F9F7E8';
@@ -556,10 +557,33 @@ export default function SecurityScreen() {
                   Legal & Safety Policies
                 </Text>
                 <Text style={[styles.cardSubtitle, { color: textColorSecondary }]}>
-                  Terms of Service, Zero-Trust Privacy & AI Disclaimers
+                  Review platform policies and AI safety protocols
                 </Text>
               </View>
             </View>
+
+            <TouchableOpacity
+              style={[
+                styles.policyBtn,
+                {
+                  borderColor: isDark ? '#334155' : '#E2E8F0',
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
+                  marginBottom: 10,
+                },
+              ]}
+              onPress={() => {
+                setTermsModalMode('terms');
+                setIsTermsModalVisible(true);
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Feather name="file-text" size={16} color={blueAccent} style={{ marginRight: 10 }} />
+                <Text style={[styles.policyBtnText, { color: textColorPrimary }]}>Terms of Service & Privacy</Text>
+              </View>
+              <Feather name="chevron-right" size={18} color={textColorSecondary} />
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={[
                 styles.policyBtn,
@@ -568,12 +592,15 @@ export default function SecurityScreen() {
                   backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
                 },
               ]}
-              onPress={() => setIsTermsModalVisible(true)}
+              onPress={() => {
+                setTermsModalMode('ai');
+                setIsTermsModalVisible(true);
+              }}
               activeOpacity={0.7}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Feather name="file-text" size={16} color={blueAccent} style={{ marginRight: 10 }} />
-                <Text style={[styles.policyBtnText, { color: textColorPrimary }]}>Review Terms & AI Policies</Text>
+                <MaterialCommunityIcons name="robot-outline" size={16} color={blueAccent} style={{ marginRight: 10 }} />
+                <Text style={[styles.policyBtnText, { color: textColorPrimary }]}>AI & Chatbot Terms</Text>
               </View>
               <Feather name="chevron-right" size={18} color={textColorSecondary} />
             </TouchableOpacity>
@@ -657,6 +684,7 @@ export default function SecurityScreen() {
         <TermsModal
           visible={isTermsModalVisible}
           onClose={() => setIsTermsModalVisible(false)}
+          mode={termsModalMode}
         />
 
       </View>

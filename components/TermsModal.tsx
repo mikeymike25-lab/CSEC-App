@@ -3,10 +3,13 @@ import { View, Text, Modal, ScrollView, TouchableOpacity, StyleSheet } from 'rea
 import { useTheme } from '../context/ThemeContext';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
+export type TermsModalMode = 'terms' | 'ai' | 'both';
+
 interface TermsModalProps {
   visible: boolean;
   onClose: () => void;
   onAccept?: () => void;
+  mode?: TermsModalMode;
   defaultToAiTab?: boolean;
 }
 
@@ -14,16 +17,22 @@ export default function TermsModal({
   visible,
   onClose,
   onAccept,
+  mode = 'terms',
   defaultToAiTab = false,
 }: TermsModalProps) {
   const { isDark } = useTheme();
-  const [activeTab, setActiveTab] = useState<'general' | 'ai'>(defaultToAiTab ? 'ai' : 'general');
+
+  // If defaultToAiTab is true, force mode to 'ai' for backward compatibility
+  const resolvedMode: TermsModalMode = defaultToAiTab ? 'ai' : mode;
+  const [activeTab, setActiveTab] = useState<'general' | 'ai'>(
+    resolvedMode === 'ai' ? 'ai' : 'general'
+  );
 
   React.useEffect(() => {
     if (visible) {
-      setActiveTab(defaultToAiTab ? 'ai' : 'general');
+      setActiveTab(resolvedMode === 'ai' ? 'ai' : 'general');
     }
-  }, [visible, defaultToAiTab]);
+  }, [visible, resolvedMode]);
 
   const modalBg = isDark ? '#16202A' : '#FFFFFF';
   const headerBg = isDark ? '#1E293B' : '#F1F5F9';
@@ -32,6 +41,47 @@ export default function TermsModal({
   const activeTabBg = isDark ? '#0284C7' : '#2563EB';
   const inactiveTabBg = isDark ? '#1E293B' : '#E2E8F0';
   const borderColor = isDark ? '#334155' : '#E2E8F0';
+
+  const isOnlyTerms = resolvedMode === 'terms';
+  const isOnlyAi = resolvedMode === 'ai';
+  const showTabs = resolvedMode === 'both';
+
+  const modalTitle = isOnlyTerms
+    ? 'Terms and Conditions'
+    : isOnlyAi
+    ? 'AI & Chatbot Terms'
+    : 'C-SEC Legal & Safety Policies';
+
+  const renderHeaderIcon = () => {
+    if (isOnlyTerms) {
+      return (
+        <Feather
+          name="file-text"
+          size={20}
+          color={isDark ? '#38BDF8' : '#2563EB'}
+          style={{ marginRight: 8 }}
+        />
+      );
+    }
+    if (isOnlyAi) {
+      return (
+        <MaterialCommunityIcons
+          name="robot-outline"
+          size={22}
+          color={isDark ? '#38BDF8' : '#2563EB'}
+          style={{ marginRight: 8 }}
+        />
+      );
+    }
+    return (
+      <MaterialCommunityIcons
+        name="shield-check-outline"
+        size={22}
+        color={isDark ? '#38BDF8' : '#2563EB'}
+        style={{ marginRight: 8 }}
+      />
+    );
+  };
 
   return (
     <Modal
@@ -45,14 +95,9 @@ export default function TermsModal({
           {/* ── HEADER ────────────────────────────────────── */}
           <View style={[styles.modalHeader, { backgroundColor: headerBg }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <MaterialCommunityIcons
-                name="shield-check-outline"
-                size={22}
-                color={isDark ? '#38BDF8' : '#2563EB'}
-                style={{ marginRight: 8 }}
-              />
+              {renderHeaderIcon()}
               <Text style={[styles.modalTitle, { color: textColorPrimary }]}>
-                C-SEC Legal & Safety Policies
+                {modalTitle}
               </Text>
             </View>
             <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -60,54 +105,56 @@ export default function TermsModal({
             </TouchableOpacity>
           </View>
 
-          {/* ── TABS (TERMS VS AI TERMS) ───────────────────── */}
-          <View style={[styles.tabBar, { borderBottomColor: borderColor }]}>
-            <TouchableOpacity
-              style={[
-                styles.tabButton,
-                { backgroundColor: activeTab === 'general' ? activeTabBg : inactiveTabBg },
-              ]}
-              onPress={() => setActiveTab('general')}
-            >
-              <Feather
-                name="file-text"
-                size={14}
-                color={activeTab === 'general' ? '#FFF' : textColorSecondary}
-                style={{ marginRight: 6 }}
-              />
-              <Text
+          {/* ── TABS (ONLY WHEN MODE IS BOTH) ──────────────── */}
+          {showTabs && (
+            <View style={[styles.tabBar, { borderBottomColor: borderColor }]}>
+              <TouchableOpacity
                 style={[
-                  styles.tabText,
-                  { color: activeTab === 'general' ? '#FFF' : textColorSecondary },
+                  styles.tabButton,
+                  { backgroundColor: activeTab === 'general' ? activeTabBg : inactiveTabBg },
                 ]}
+                onPress={() => setActiveTab('general')}
               >
-                Terms of Service
-              </Text>
-            </TouchableOpacity>
+                <Feather
+                  name="file-text"
+                  size={14}
+                  color={activeTab === 'general' ? '#FFF' : textColorSecondary}
+                  style={{ marginRight: 6 }}
+                />
+                <Text
+                  style={[
+                    styles.tabText,
+                    { color: activeTab === 'general' ? '#FFF' : textColorSecondary },
+                  ]}
+                >
+                  Terms of Service
+                </Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[
-                styles.tabButton,
-                { backgroundColor: activeTab === 'ai' ? activeTabBg : inactiveTabBg },
-              ]}
-              onPress={() => setActiveTab('ai')}
-            >
-              <MaterialCommunityIcons
-                name="robot-outline"
-                size={15}
-                color={activeTab === 'ai' ? '#FFF' : textColorSecondary}
-                style={{ marginRight: 6 }}
-              />
-              <Text
+              <TouchableOpacity
                 style={[
-                  styles.tabText,
-                  { color: activeTab === 'ai' ? '#FFF' : textColorSecondary },
+                  styles.tabButton,
+                  { backgroundColor: activeTab === 'ai' ? activeTabBg : inactiveTabBg },
                 ]}
+                onPress={() => setActiveTab('ai')}
               >
-                AI & Chatbot Terms
-              </Text>
-            </TouchableOpacity>
-          </View>
+                <MaterialCommunityIcons
+                  name="robot-outline"
+                  size={15}
+                  color={activeTab === 'ai' ? '#FFF' : textColorSecondary}
+                  style={{ marginRight: 6 }}
+                />
+                <Text
+                  style={[
+                    styles.tabText,
+                    { color: activeTab === 'ai' ? '#FFF' : textColorSecondary },
+                  ]}
+                >
+                  AI & Chatbot Terms
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* ── CONTENT BODY ──────────────────────────────── */}
           <ScrollView
@@ -115,7 +162,11 @@ export default function TermsModal({
             contentContainerStyle={{ padding: 18, paddingBottom: 30 }}
             showsVerticalScrollIndicator={true}
           >
-            {activeTab === 'general' ? (
+            {isOnlyTerms ? (
+              <GeneralTermsContent textColor={textColorPrimary} subColor={textColorSecondary} />
+            ) : isOnlyAi ? (
+              <AiTermsContent textColor={textColorPrimary} subColor={textColorSecondary} />
+            ) : activeTab === 'general' ? (
               <GeneralTermsContent textColor={textColorPrimary} subColor={textColorSecondary} />
             ) : (
               <AiTermsContent textColor={textColorPrimary} subColor={textColorSecondary} />
@@ -124,7 +175,7 @@ export default function TermsModal({
 
           {/* ── FOOTER ACTIONS ────────────────────────────── */}
           <View style={[styles.modalFooter, { borderTopColor: borderColor, backgroundColor: headerBg }]}>
-            {onAccept ? (
+            {onAccept && isOnlyTerms ? (
               <View style={{ flexDirection: 'row', width: '100%', gap: 10 }}>
                 <TouchableOpacity
                   style={[styles.actionBtn, { backgroundColor: isDark ? '#334155' : '#E2E8F0', flex: 1 }]}
@@ -141,7 +192,7 @@ export default function TermsModal({
                   }}
                 >
                   <Text style={[styles.actionBtnText, { color: '#FFF', fontWeight: 'bold' }]}>
-                    I Accept All Terms
+                    I Accept Terms
                   </Text>
                 </TouchableOpacity>
               </View>
