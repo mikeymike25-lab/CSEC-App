@@ -190,8 +190,8 @@ export default function TabLayout() {
       />
       
       <Tabs
-        sceneContainerStyle={{ backgroundColor: isDark ? '#121A21' : '#F9F7E8' }}
         screenOptions={{
+          sceneStyle: { backgroundColor: isDark ? '#121A21' : '#F9F7E8' },
           animation: isReduceMotion ? 'none' : 'fade',
           tabBarShowLabel: false, 
           headerTitle: () => <AnimatedHeaderLogo isDark={isDark} isReduceMotion={isReduceMotion} />, 

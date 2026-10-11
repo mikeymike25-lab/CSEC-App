@@ -20,7 +20,7 @@ export function CsecWidget({ history }: { history: any[] }) {
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          justifyContent: 'space_between',
+          justifyContent: 'space-between',
           marginBottom: 16,
           padding: 8,
           backgroundColor: '#1E293B',
@@ -62,7 +62,7 @@ export function CsecWidget({ history }: { history: any[] }) {
               key={index}
               style={{
                 flexDirection: 'row',
-                justifyContent: 'space_between',
+                justifyContent: 'space-between',
                 alignItems: 'center',
                 backgroundColor: '#1F2D3D',
                 borderRadius: 12,
@@ -73,7 +73,8 @@ export function CsecWidget({ history }: { history: any[] }) {
               <FlexWidget style={{ flexDirection: 'column', flex: 1 }}>
                 <TextWidget
                   text={item.url.length > 25 ? item.url.substring(0, 25) + '...' : item.url}
-                  style={{ fontSize: 13, color: '#FFFFFF', fontWeight: 'bold', maxLines: 1 }}
+                  maxLines={1}
+                  style={{ fontSize: 13, color: '#FFFFFF', fontWeight: 'bold' }}
                 />
                 <TextWidget
                   text={item.date}

@@ -20,7 +20,7 @@ export async function updateWidget() {
   try {
     requestWidgetUpdate({
       widgetName: 'CsecWidget',
-      renderWidget: () => null, // this will trigger the task handler
+      renderWidget: () => <CsecWidget history={[]} />,
       widgetNotFound: () => {
         // Widget not added to home screen, ignore
       },
