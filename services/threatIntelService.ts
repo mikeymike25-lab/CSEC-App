@@ -8,7 +8,9 @@ import {
   deleteDoc, 
   arrayUnion, 
   arrayRemove, 
-  increment 
+  increment,
+  query,
+  where
 } from 'firebase/firestore';
 import { auth, db } from '../firebaseConfig';
 
@@ -251,20 +253,52 @@ export async function forceOverrideLink(
 /**
  * Remove a link from Database 1 (Un-force)
  */
-export async function removeVerifiedLink(docId: string, domain: string, verdict: 'Safe' | 'Phishing') {
+export async function removeVerifiedLink(docId: string, domain: string, verdict?: 'Safe' | 'Phishing') {
+  const cleanDomain = (domain || '').trim().toLowerCase();
   const threatDocRef = doc(db, 'system', 'threat_intel');
-  const listKey = verdict === 'Safe' ? 'whitelist' : 'blacklist';
 
+  // 1. Delete specific document from verified_links collection if real ID
   try {
-    await deleteDoc(doc(db, 'verified_links', docId));
+    if (docId && !docId.startsWith('threat-')) {
+      await deleteDoc(doc(db, 'verified_links', docId));
+    }
   } catch (err) {
-    console.warn("deleteDoc notice:", err);
+    console.warn("deleteDoc direct notice:", err);
   }
 
-  await updateDoc(threatDocRef, {
-    [listKey]: arrayRemove(domain),
-    updatedAt: new Date().toISOString()
-  });
+  // 2. Also purge any documents in verified_links matching this domain
+  try {
+    const q = query(collection(db, 'verified_links'), where('domain', '==', cleanDomain));
+    const snap = await getDocs(q);
+    for (const d of snap.docs) {
+      await deleteDoc(d.ref);
+    }
+  } catch (err) {
+    console.warn("purge by domain notice:", err);
+  }
+
+  // 3. Remove case-insensitively from BOTH whitelist and blacklist in system/threat_intel
+  try {
+    const docSnap = await getDoc(threatDocRef);
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      const currentWl: string[] = Array.isArray(data?.whitelist) ? data.whitelist : [];
+      const currentBl: string[] = Array.isArray(data?.blacklist) ? data.blacklist : [];
+
+      const newWl = currentWl.filter(d => (d || '').trim().toLowerCase() !== cleanDomain);
+      const newBl = currentBl.filter(d => (d || '').trim().toLowerCase() !== cleanDomain);
+
+      await setDoc(threatDocRef, {
+        whitelist: newWl,
+        blacklist: newBl,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    }
+  } catch (err) {
+    console.warn("updateDoc system/threat_intel notice:", err);
+  }
+
+  return { success: true, domain: cleanDomain };
 }
 
 /**

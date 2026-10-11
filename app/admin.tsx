@@ -96,6 +96,10 @@ export default function AdminScreen() {
   const [editNotes, setEditNotes] = useState('');
   const [isSavingClass, setIsSavingClass] = useState(false);
 
+  // --- DELETE CONFIRMATION MODAL STATE ---
+  const [linkToDelete, setLinkToDelete] = useState<VerifiedLink | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   // --- DYNAMIC COLORS ---
   const bgColor = isDark ? '#121A21' : '#F9F7E8';
   const cardColor = isDark ? '#1A242E' : '#FFFFFF';
@@ -356,25 +360,25 @@ export default function AdminScreen() {
   };
 
   const handleRemoveVerified = (link: VerifiedLink) => {
-    Alert.alert(
-      "Remove Override",
-      `Are you sure you want to remove "${link.domain}" from the ${link.verdict} matrix? Scanners will revert to standard AI heuristics.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Remove", 
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await removeVerifiedLink(link.id, link.domain, link.verdict);
-              logAction(`Removed ${link.domain} from Verified ${link.verdict} matrix`);
-            } catch (err: any) {
-              Alert.alert("Error", err.message || "Failed to remove verified link.");
-            }
-          }
-        }
-      ]
-    );
+    setLinkToDelete(link);
+  };
+
+  const confirmDeleteLink = async () => {
+    if (!linkToDelete) return;
+    setIsDeleting(true);
+    try {
+      await removeVerifiedLink(linkToDelete.id, linkToDelete.domain, linkToDelete.verdict);
+      setActionFeedback(`Removed "${linkToDelete.domain}" from threat matrix.`);
+      setTimeout(() => setActionFeedback(null), 4000);
+      logAction(`Removed ${linkToDelete.domain} from Verified ${linkToDelete.verdict} matrix`);
+      setLinkToDelete(null);
+    } catch (err: any) {
+      console.error("Delete error:", err);
+      setActionFeedback(`Failed to remove: ${err.message || 'Error'}`);
+      setTimeout(() => setActionFeedback(null), 4000);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const handleExportData = async (format: 'csv' | 'json') => {
@@ -1550,6 +1554,67 @@ export default function AdminScreen() {
                       <Text style={[styles.halfButtonText, { color: '#FFF' }]}>
                         {classTarget?.isFromTriageTicket ? 'Promote to DB 1' : 'Save Changes'}
                       </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+
+            </View>
+          </View>
+        </Modal>
+
+        {/* --- CONFIRM DELETE / REMOVE OVERRIDE MODAL --- */}
+        <Modal visible={!!linkToDelete} animationType="fade" transparent={true}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+            <View style={{ backgroundColor: cardColor, width: '100%', maxWidth: 440, borderRadius: 24, padding: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.3, shadowRadius: 20, elevation: 10 }}>
+              
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(239, 68, 68, 0.15)', justifyContent: 'center', alignItems: 'center' }}>
+                  <Feather name="trash-2" size={22} color={dangerAccent} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 18, fontWeight: '800', color: textColorPrimary }}>
+                    Remove Override?
+                  </Text>
+                  <Text style={{ fontSize: 12, color: textColorSecondary }}>
+                    Database 1 Ground Truth
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => setLinkToDelete(null)} disabled={isDeleting}>
+                  <Ionicons name="close" size={22} color={textColorSecondary} />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={{ fontSize: 13, color: textColorPrimary, lineHeight: 20, marginBottom: 14 }}>
+                Are you sure you want to remove <Text style={{ fontWeight: '700', color: isDark ? '#4DA8DA' : '#0284C7' }}>"{linkToDelete?.domain}"</Text> from the {linkToDelete?.verdict} matrix?
+              </Text>
+
+              <View style={{ backgroundColor: inputBgColor, padding: 12, borderRadius: 12, marginBottom: 18 }}>
+                <Text style={{ fontSize: 11, color: textColorSecondary, lineHeight: 16 }}>
+                  ⚠️ Scanners will revert to standard AI heuristics for this domain. It will be purged from Database 1 and system overrides.
+                </Text>
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity
+                  style={[styles.halfButton, { flex: 1, backgroundColor: isDark ? '#233240' : '#E2E8F0', borderColor: 'transparent' }]}
+                  onPress={() => setLinkToDelete(null)}
+                  disabled={isDeleting}
+                >
+                  <Text style={[styles.halfButtonText, { color: textColorSecondary }]}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.halfButton, { flex: 1.2, backgroundColor: dangerAccent, borderColor: 'transparent' }]}
+                  onPress={confirmDeleteLink}
+                  disabled={isDeleting}
+                >
+                  {isDeleting ? (
+                    <ActivityIndicator size="small" color="#FFF" />
+                  ) : (
+                    <>
+                      <Feather name="trash-2" size={15} color="#FFF" />
+                      <Text style={[styles.halfButtonText, { color: '#FFF' }]}>Remove</Text>
                     </>
                   )}
                 </TouchableOpacity>
