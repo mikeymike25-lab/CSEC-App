@@ -60,6 +60,8 @@ export default function ScanScreen() {
   const [accountStatus, setAccountStatus] = useState('active'); // Tracks real-time status
   const [isStatusModalVisible, setIsStatusModalVisible] = useState(false); // Modal for suspended/banned
   const [isInvalidUrlModalVisible, setIsInvalidUrlModalVisible] = useState(false);
+  const [isMissingUrlModalVisible, setIsMissingUrlModalVisible] = useState(false);
+  const [missingUrlContext, setMissingUrlContext] = useState<'report' | 'scan'>('report');
 
   // 1. Grab the dark mode state
   const { isDark } = useTheme();
@@ -180,7 +182,8 @@ export default function ScanScreen() {
     const cleanUrl = url.trim();
     setReportSuccessMessage(null);
     if (!cleanUrl) {
-      Alert.alert("Input Required", "Please enter a URL to scan.");
+      setMissingUrlContext('scan');
+      setIsMissingUrlModalVisible(true);
       return;
     }
 
@@ -549,8 +552,8 @@ export default function ScanScreen() {
           style={styles.directReportLink}
           onPress={() => {
             if (!url.trim()) {
-              if (Platform.OS === 'web') window.alert("Please enter or paste a URL first to report it.");
-              else Alert.alert("Input Required", "Please enter or paste a URL first to report it.");
+              setMissingUrlContext('report');
+              setIsMissingUrlModalVisible(true);
               return;
             }
             setIsReportLinkModalVisible(true);
@@ -865,6 +868,66 @@ export default function ScanScreen() {
               onPress={() => setIsInvalidUrlModalVisible(false)}
             >
               <Text style={styles.modalActionBtnText}>GOT IT</Text>
+            </TouchableOpacity>
+            
+          </View>
+        </View>
+      </Modal>
+
+      {/* --- MISSING / NO URL MODAL (CUSTOM MODAL FOR REPORT & SCAN) --- */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={isMissingUrlModalVisible}
+        onRequestClose={() => setIsMissingUrlModalVisible(false)}
+      >
+        <View style={styles.modalOverlayCenter}>
+          <View style={[styles.modalContainer, { backgroundColor: cardColor, borderColor: yellowAccent, borderWidth: 1.5 }]}>
+            
+            <View style={[styles.modalIconWrapper, { backgroundColor: yellowAccent + '20' }]}>
+              <MaterialCommunityIcons name="link-variant-off" size={32} color={yellowAccent} />
+            </View>
+            
+            <Text style={[styles.modalTitle, { color: textColorPrimary }]}>No URL Detected</Text>
+            
+            <Text style={[styles.modalBody, { color: textColorSecondary, marginBottom: 20 }]}>
+              {missingUrlContext === 'report'
+                ? "Please enter or paste the URL you want to report so our Threat Intelligence researchers can inspect the domain."
+                : "Please input a URL into the scanner before initiating heuristic analysis."}
+            </Text>
+
+            {/* Quick Action: Paste from Clipboard & Continue */}
+            <TouchableOpacity 
+              style={[styles.modalActionBtn, { backgroundColor: isDark ? '#38BDF8' : '#0284C7', marginBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }]}
+              activeOpacity={0.8}
+              onPress={async () => {
+                try {
+                  const clip = await Clipboard.getStringAsync();
+                  const trimmed = (clip || '').trim();
+                  if (trimmed) {
+                    setUrl(trimmed);
+                    setIsMissingUrlModalVisible(false);
+                    if (missingUrlContext === 'report') {
+                      setIsReportLinkModalVisible(true);
+                    }
+                  } else {
+                    setIsMissingUrlModalVisible(false);
+                  }
+                } catch {
+                  setIsMissingUrlModalVisible(false);
+                }
+              }}
+            >
+              <Feather name="clipboard" size={16} color="#FFF" style={{ marginRight: 8 }} />
+              <Text style={styles.modalActionBtnText}>PASTE FROM CLIPBOARD</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.modalActionBtn, { backgroundColor: isDark ? '#233240' : '#E2E8F0' }]}
+              activeOpacity={0.8}
+              onPress={() => setIsMissingUrlModalVisible(false)}
+            >
+              <Text style={[styles.modalActionBtnText, { color: textColorSecondary }]}>ENTER MANUALLY</Text>
             </TouchableOpacity>
             
           </View>

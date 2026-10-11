@@ -263,15 +263,28 @@ export async function removeVerifiedLink(docId: string, domain: string, verdict:
 }
 
 /**
- * Resolves a ticket directly from the researcher triage backlog
+ * Resolves a ticket directly from the researcher triage backlog with custom classification
  */
 export async function resolveBacklogTicket(
   ticketId: string, 
   rawUrl: string, 
   verdict: 'Safe' | 'Phishing',
+  category: string = 'Researcher Triage Approved',
   notes: string = ''
 ) {
-  return await forceOverrideLink(rawUrl, verdict, 'Researcher Triage Approved', notes);
+  return await forceOverrideLink(rawUrl, verdict, category, notes);
+}
+
+/**
+ * Updates the classification, category, and verdict of a verified link in Database 1
+ */
+export async function updateLinkClassification(
+  rawUrl: string,
+  newVerdict: 'Safe' | 'Phishing',
+  newCategory: string = 'General',
+  notes: string = ''
+) {
+  return await forceOverrideLink(rawUrl, newVerdict, newCategory, notes);
 }
 
 /**

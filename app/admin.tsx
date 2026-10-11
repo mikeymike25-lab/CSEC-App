@@ -12,6 +12,7 @@ import {
   removeVerifiedLink, 
   resolveBacklogTicket, 
   exportThreatIntelData,
+  updateLinkClassification,
   VerifiedLink,
   TriageTicket 
 } from '../services/threatIntelService';
@@ -72,6 +73,27 @@ export default function AdminScreen() {
   const [verifiedSearch, setVerifiedSearch] = useState('');
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+
+  // --- TRIAGE FILTER & SEARCH STATE ---
+  const [triageSearch, setTriageSearch] = useState('');
+  const [triageFilter, setTriageFilter] = useState<'all' | 'pending' | 'high' | 'resolved'>('all');
+
+  // --- LINK CLASSIFICATION EDITOR STATE ---
+  const [isClassModalVisible, setIsClassModalVisible] = useState(false);
+  const [classTarget, setClassTarget] = useState<{
+    id: string;
+    url: string;
+    domain: string;
+    verdict: 'Safe' | 'Phishing';
+    category: string;
+    notes?: string;
+    isFromTriageTicket?: boolean;
+  } | null>(null);
+  const [editVerdict, setEditVerdict] = useState<'Safe' | 'Phishing'>('Phishing');
+  const [editCategory, setEditCategory] = useState('Credential Harvesting');
+  const [editCustomCategory, setEditCustomCategory] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [isSavingClass, setIsSavingClass] = useState(false);
 
   // --- DYNAMIC COLORS ---
   const bgColor = isDark ? '#121A21' : '#F9F7E8';
@@ -258,6 +280,79 @@ export default function AdminScreen() {
     }
   };
 
+  const handleOpenClassEditorForVerified = (link: VerifiedLink) => {
+    setClassTarget({
+      id: link.id,
+      url: link.url,
+      domain: link.domain,
+      verdict: link.verdict,
+      category: link.category || 'General',
+      notes: link.notes || '',
+      isFromTriageTicket: false
+    });
+    setEditVerdict(link.verdict);
+    const standardCategories = [
+      'Credential Harvesting', 'Financial / Bank Spoof', 'Malware Distribution',
+      'Brand Impersonation', 'Account Takeover', 'Academic Portal',
+      'Government / Utility', 'Legitimate Corporate', 'General Safe Domain'
+    ];
+    if (standardCategories.includes(link.category || '')) {
+      setEditCategory(link.category || 'Credential Harvesting');
+      setEditCustomCategory('');
+    } else if (link.category) {
+      setEditCategory('Custom');
+      setEditCustomCategory(link.category);
+    } else {
+      setEditCategory(link.verdict === 'Safe' ? 'Legitimate Corporate' : 'Credential Harvesting');
+      setEditCustomCategory('');
+    }
+    setEditNotes(link.notes || '');
+    setIsClassModalVisible(true);
+  };
+
+  const handleOpenClassEditorForTriage = (ticket: TriageTicket) => {
+    setClassTarget({
+      id: ticket.id,
+      url: ticket.url,
+      domain: ticket.domain,
+      verdict: 'Phishing',
+      category: 'Credential Harvesting',
+      notes: ticket.notes || '',
+      isFromTriageTicket: true
+    });
+    setEditVerdict('Phishing');
+    setEditCategory('Credential Harvesting');
+    setEditCustomCategory('');
+    setEditNotes(ticket.notes || '');
+    setIsClassModalVisible(true);
+  };
+
+  const handleSaveClassification = async () => {
+    if (!classTarget) return;
+    setIsSavingClass(true);
+    try {
+      const finalCategory = editCategory === 'Custom'
+        ? (editCustomCategory.trim() || 'Custom Security Classification')
+        : editCategory;
+
+      if (classTarget.isFromTriageTicket) {
+        await resolveBacklogTicket(classTarget.id, classTarget.url, editVerdict, finalCategory, editNotes);
+        setActionFeedback(`Classified & Promoted "${classTarget.domain}" as ${editVerdict.toUpperCase()} [${finalCategory}]`);
+      } else {
+        await updateLinkClassification(classTarget.url, editVerdict, finalCategory, editNotes);
+        setActionFeedback(`Updated classification for "${classTarget.domain}" to ${editVerdict.toUpperCase()} [${finalCategory}]`);
+      }
+      setTimeout(() => setActionFeedback(null), 4000);
+      logAction(`Classified ${classTarget.domain} -> ${editVerdict} (${finalCategory})`);
+      setIsClassModalVisible(false);
+      setClassTarget(null);
+    } catch (err: any) {
+      Alert.alert("Classification Error", err.message || "Failed to update link classification.");
+    } finally {
+      setIsSavingClass(false);
+    }
+  };
+
   const handleRemoveVerified = (link: VerifiedLink) => {
     Alert.alert(
       "Remove Override",
@@ -388,11 +483,38 @@ export default function AdminScreen() {
     (u.email || "").toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const filteredTriageTickets = triageTickets.filter((ticket) => {
+    const term = triageSearch.trim().toLowerCase();
+    const matchesSearch = !term ||
+      (ticket.domain || '').toLowerCase().includes(term) ||
+      (ticket.url || '').toLowerCase().includes(term) ||
+      (ticket.reasons || []).some(r => r.toLowerCase().includes(term)) ||
+      (ticket.initialVerdict || '').toLowerCase().includes(term) ||
+      (ticket.resolution || '').toLowerCase().includes(term);
+    
+    if (!matchesSearch) return false;
+
+    if (triageFilter === 'pending') return ticket.status === 'pending';
+    if (triageFilter === 'high') return ticket.priority === 'HIGH' && ticket.status === 'pending';
+    if (triageFilter === 'resolved') return ticket.status === 'resolved';
+    return true;
+  });
+
   const getStatusColor = (status: string) => { 
     if (status === 'suspended') return warningAccent; 
     if (status === 'banned') return dangerAccent; 
     return successAccent; 
   };
+
+  // Reconciled counts connecting Threat Intelligence Matrix & Researcher Triage Pipeline
+  const verifiedSafeCount = verifiedLinks.filter(l => l.verdict === 'Safe').length;
+  const verifiedPhishingCount = verifiedLinks.filter(l => l.verdict === 'Phishing').length;
+  const displayWhitelistCount = Math.max(threatCounts.whitelist, verifiedSafeCount);
+  const displayBlacklistCount = Math.max(threatCounts.blacklist, verifiedPhishingCount);
+  const displayTotalOverrides = Math.max(verifiedLinks.length, displayWhitelistCount + displayBlacklistCount);
+
+  const pendingTriageCount = triageTickets.filter(t => t.status === 'pending').length;
+  const resolvedTriageCount = triageTickets.filter(t => t.status === 'resolved').length;
 
   if (isLoading || !isAuthorized) {
     return <View style={[styles.safeArea, { backgroundColor: bgColor, justifyContent: 'center', alignItems: 'center' }]}><ActivityIndicator size="large" color="#4DA8DA" /></View>;
@@ -438,19 +560,28 @@ export default function AdminScreen() {
               <MaterialCommunityIcons name="shield-half-full" size={20} color={primaryAccent} />
               <Text style={[styles.cardTitle, { color: textColorPrimary }]}>Threat Intelligence Matrix</Text>
             </View>
-            <Text style={[styles.toggleSubtitle, { color: textColorSecondary, marginBottom: 12 }]}>Manually override AI classification for specific domains.</Text>
+            <Text style={[styles.toggleSubtitle, { color: textColorSecondary, marginBottom: 8 }]}>
+              Manually override AI classification for specific domains.
+            </Text>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
+              <Feather name="link-2" size={12} color={isDark ? '#4DA8DA' : '#0284C7'} style={{ marginRight: 5 }} />
+              <Text style={{ color: isDark ? '#4DA8DA' : '#0284C7', fontSize: 11, fontWeight: '700' }}>
+                Synced with Database 1 (Truth Matrix) & Triage Sandbox
+              </Text>
+            </View>
             
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16, gap: 10 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)', paddingVertical: 4, paddingHorizontal: 10, borderRadius: 12, borderWidth: 1, borderColor: successAccent + '40' }}>
                 <Feather name="shield" size={12} color={successAccent} style={{ marginRight: 5 }} />
                 <Text style={{ color: successAccent, fontSize: 11, fontWeight: '700' }}>
-                  {threatCounts.whitelist} Whitelisted
+                  {displayWhitelistCount} Whitelisted
                 </Text>
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : 'rgba(239, 68, 68, 0.1)', paddingVertical: 4, paddingHorizontal: 10, borderRadius: 12, borderWidth: 1, borderColor: dangerAccent + '40' }}>
                 <Feather name="alert-triangle" size={12} color={dangerAccent} style={{ marginRight: 5 }} />
                 <Text style={{ color: dangerAccent, fontSize: 11, fontWeight: '700' }}>
-                  {threatCounts.blacklist} Blacklisted
+                  {displayBlacklistCount} Blacklisted
                 </Text>
               </View>
             </View>
@@ -483,7 +614,7 @@ export default function AdminScreen() {
                 onPress={() => setIsVerifiedLinksVisible(true)}
               >
                 <Feather name="list" size={15} color={textColorPrimary} />
-                <Text style={[styles.halfButtonText, { color: textColorPrimary }]}>Manage ({verifiedLinks.length})</Text>
+                <Text style={[styles.halfButtonText, { color: textColorPrimary }]}>Manage ({displayTotalOverrides})</Text>
               </TouchableOpacity>
 
               <TouchableOpacity 
@@ -862,12 +993,19 @@ export default function AdminScreen() {
                             </Text>
                           </TouchableOpacity>
                         </View>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                           <View style={{ backgroundColor: link.verdict === 'Safe' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
                             <Text style={{ color: link.verdict === 'Safe' ? successAccent : dangerAccent, fontSize: 11, fontWeight: 'bold' }}>
                               {link.verdict.toUpperCase()}
                             </Text>
                           </View>
+                          <TouchableOpacity 
+                            onPress={() => handleOpenClassEditorForVerified(link)}
+                            style={{ paddingHorizontal: 8, paddingVertical: 6, borderRadius: 8, backgroundColor: isDark ? '#233240' : '#F1F5F9', flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                          >
+                            <Feather name="edit-3" size={13} color={isDark ? '#4DA8DA' : '#0284C7'} />
+                            <Text style={{ fontSize: 11, fontWeight: '600', color: isDark ? '#4DA8DA' : '#0284C7' }}>Classify</Text>
+                          </TouchableOpacity>
                           <TouchableOpacity 
                             onPress={() => handleRemoveVerified(link)}
                             style={{ padding: 6, borderRadius: 8, backgroundColor: isDark ? '#233240' : '#F1F5F9' }}
@@ -879,9 +1017,21 @@ export default function AdminScreen() {
 
                       <View style={[styles.divider, { backgroundColor: isDark ? '#2D4356' : '#F2F0E4', marginVertical: 10 }]} />
 
-                      <Text style={{ color: textColorSecondary, fontSize: 11 }}>
-                        Verified by: <Text style={{ color: textColorPrimary, fontWeight: '600' }}>{link.verifiedBy || 'Admin'}</Text> • {link.category || 'General'}
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                        <Text style={{ color: textColorSecondary, fontSize: 11 }}>
+                          Verified by: <Text style={{ color: textColorPrimary, fontWeight: '600' }}>{link.verifiedBy || 'Admin'}</Text>
+                        </Text>
+                        <View style={{ backgroundColor: isDark ? '#233240' : '#E2E8F0', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
+                          <Text style={{ fontSize: 10, fontWeight: '700', color: isDark ? '#38BDF8' : '#0369A1' }}>
+                            🏷️ {link.category || 'General'}
+                          </Text>
+                        </View>
+                      </View>
+                      {link.notes ? (
+                        <Text style={{ color: textColorSecondary, fontSize: 11, marginTop: 4, fontStyle: 'italic' }}>
+                          Note: "{link.notes}"
+                        </Text>
+                      ) : null}
                     </View>
                   ))
               )}
@@ -917,7 +1067,7 @@ export default function AdminScreen() {
               <View>
                 <Text style={[styles.modalTitle, { color: textColorPrimary }]}>Researcher Triage Queue</Text>
                 <Text style={[styles.headerSubtitle, { color: textColorSecondary, marginTop: 2 }]}>
-                  Database 3: {triageTickets.filter(t => t.status === 'pending').length} Backlog Tickets Awaiting Validation
+                  Database 3: {pendingTriageCount} Pending / {triageTickets.length} Total Tickets
                 </Text>
               </View>
               <TouchableOpacity onPress={() => setIsTriageVisible(false)} style={styles.closeBtn}>
@@ -925,8 +1075,60 @@ export default function AdminScreen() {
               </TouchableOpacity>
             </View>
 
+            {/* Search Filter Bar */}
+            <View style={styles.searchContainer}>
+              <View style={[styles.searchBox, { backgroundColor: inputBgColor }]}>
+                <Feather name="search" size={20} color={textColorSecondary} style={{ marginRight: 10 }} />
+                <TextInput 
+                  style={[styles.searchInput, { color: textColorPrimary }]} 
+                  placeholder="Filter by domain, URL, or reason..." 
+                  placeholderTextColor={textColorSecondary} 
+                  value={triageSearch} 
+                  onChangeText={setTriageSearch} 
+                />
+                {triageSearch.length > 0 && (
+                  <TouchableOpacity onPress={() => setTriageSearch('')}>
+                    <Feather name="x" size={18} color={textColorSecondary} />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+
+            {/* Filter Chips */}
+            <View style={{ flexDirection: 'row', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 4, gap: 8 }}>
+              {(['all', 'pending', 'high', 'resolved'] as const).map((filterKey) => {
+                const isActive = triageFilter === filterKey;
+                const label = filterKey === 'all' ? `All (${triageTickets.length})` 
+                  : filterKey === 'pending' ? `Pending (${pendingTriageCount})`
+                  : filterKey === 'high' ? `High Priority (${triageTickets.filter(t => t.priority === 'HIGH' && t.status === 'pending').length})`
+                  : `Resolved (${resolvedTriageCount})`;
+                return (
+                  <TouchableOpacity
+                    key={filterKey}
+                    onPress={() => setTriageFilter(filterKey)}
+                    style={{
+                      paddingVertical: 6,
+                      paddingHorizontal: 12,
+                      borderRadius: 14,
+                      backgroundColor: isActive 
+                        ? (filterKey === 'high' ? dangerAccent : (filterKey === 'resolved' ? successAccent : (isDark ? '#4DA8DA' : '#1E3246'))) 
+                        : (isDark ? '#233240' : '#E2E8F0'),
+                    }}
+                  >
+                    <Text style={{ 
+                      fontSize: 11, 
+                      fontWeight: '700', 
+                      color: isActive ? '#FFFFFF' : textColorSecondary 
+                    }}>
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
             {actionFeedback && (
-              <View style={{ marginHorizontal: 20, marginTop: 12, padding: 12, borderRadius: 12, backgroundColor: 'rgba(16, 185, 129, 0.15)', borderWidth: 1, borderColor: successAccent, flexDirection: 'row', alignItems: 'center' }}>
+              <View style={{ marginHorizontal: 20, marginTop: 10, padding: 12, borderRadius: 12, backgroundColor: 'rgba(16, 185, 129, 0.15)', borderWidth: 1, borderColor: successAccent, flexDirection: 'row', alignItems: 'center' }}>
                 <Feather name="check-circle" size={16} color={successAccent} style={{ marginRight: 8 }} />
                 <Text style={{ color: successAccent, fontSize: 13, fontWeight: '700', flex: 1 }}>{actionFeedback}</Text>
                 <TouchableOpacity onPress={() => setActionFeedback(null)}>
@@ -936,12 +1138,12 @@ export default function AdminScreen() {
             )}
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20 }}>
-              {triageTickets.length === 0 ? (
+              {filteredTriageTickets.length === 0 ? (
                 <Text style={{ color: textColorSecondary, textAlign: 'center', marginTop: 40, fontSize: 16 }}>
-                  Backlog is clean! No pending link tickets in Database 3.
+                  {triageSearch ? 'No triage tickets match your search.' : 'Backlog is clean! No tickets match this filter.'}
                 </Text>
               ) : (
-                triageTickets.map((ticket) => (
+                filteredTriageTickets.map((ticket) => (
                   <View 
                     key={ticket.id} 
                     style={[
@@ -991,34 +1193,51 @@ export default function AdminScreen() {
                       Reasons: <Text style={{ color: textColorSecondary }}>{(ticket.reasons || []).join(', ') || 'User Flagged'}</Text>
                     </Text>
                     {ticket.initialVerdict && (
-                      <Text style={{ color: textColorSecondary, fontSize: 11, marginBottom: 10 }}>
+                      <Text style={{ color: textColorSecondary, fontSize: 11, marginBottom: 8 }}>
                         Initial AI Verdict: <Text style={{ color: textColorPrimary, fontWeight: '600' }}>{ticket.initialVerdict}</Text>
                       </Text>
                     )}
 
                     {ticket.status === 'resolved' ? (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                        <Feather name="check-circle" size={14} color={successAccent} />
-                        <Text style={{ color: successAccent, fontSize: 12, fontWeight: 'bold' }}>
-                          Promoted to Database 1 ({ticket.resolution || 'Resolved'})
-                        </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6, flexWrap: 'wrap', gap: 8 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                          <Feather name="check-circle" size={14} color={successAccent} />
+                          <Text style={{ color: successAccent, fontSize: 12, fontWeight: 'bold' }}>
+                            Promoted to DB 1 ({ticket.resolution || 'Resolved'})
+                          </Text>
+                        </View>
+                        <TouchableOpacity 
+                          onPress={() => handleOpenClassEditorForTriage(ticket)}
+                          style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: isDark ? '#233240' : '#F1F5F9', flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                        >
+                          <Feather name="edit-3" size={12} color={isDark ? '#4DA8DA' : '#0284C7'} />
+                          <Text style={{ fontSize: 11, fontWeight: '600', color: isDark ? '#4DA8DA' : '#0284C7' }}>Re-Classify</Text>
+                        </TouchableOpacity>
                       </View>
                     ) : (
-                      <View style={{ flexDirection: 'row', gap: 10, marginTop: 6 }}>
+                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
                         <TouchableOpacity 
                           style={[styles.halfButton, { flex: 1, backgroundColor: 'rgba(16, 185, 129, 0.1)', borderColor: successAccent, padding: 10 }]}
                           onPress={() => handleResolveTriage(ticket, 'Safe')}
                         >
-                          <Feather name="shield" size={14} color={successAccent} />
-                          <Text style={[styles.halfButtonText, { color: successAccent, fontSize: 12 }]}>Verify Safe</Text>
+                          <Feather name="shield" size={13} color={successAccent} />
+                          <Text style={[styles.halfButtonText, { color: successAccent, fontSize: 11 }]}>Safe</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity 
                           style={[styles.halfButton, { flex: 1, backgroundColor: 'rgba(239, 68, 68, 0.1)', borderColor: dangerAccent, padding: 10 }]}
                           onPress={() => handleResolveTriage(ticket, 'Phishing')}
                         >
-                          <Feather name="alert-triangle" size={14} color={dangerAccent} />
-                          <Text style={[styles.halfButtonText, { color: dangerAccent, fontSize: 12 }]}>Verify Phishing</Text>
+                          <Feather name="alert-triangle" size={13} color={dangerAccent} />
+                          <Text style={[styles.halfButtonText, { color: dangerAccent, fontSize: 11 }]}>Phishing</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity 
+                          style={[styles.halfButton, { flex: 1.2, backgroundColor: isDark ? '#233240' : '#E2E8F0', borderColor: isDark ? '#4DA8DA' : '#0284C7', padding: 10 }]}
+                          onPress={() => handleOpenClassEditorForTriage(ticket)}
+                        >
+                          <Feather name="tag" size={13} color={isDark ? '#4DA8DA' : '#0284C7'} />
+                          <Text style={[styles.halfButtonText, { color: isDark ? '#4DA8DA' : '#0284C7', fontSize: 11 }]}>Classify & Edit</Text>
                         </TouchableOpacity>
                       </View>
                     )}
@@ -1026,6 +1245,195 @@ export default function AdminScreen() {
                 ))
               )}
             </ScrollView>
+          </View>
+        </Modal>
+
+        {/* --- CLASSIFICATION & SECURITY CATEGORY EDITOR MODAL --- */}
+        <Modal visible={isClassModalVisible} animationType="fade" transparent={true}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+            <View style={{ backgroundColor: cardColor, width: '100%', maxWidth: 520, borderRadius: 24, padding: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.3, shadowRadius: 20, elevation: 10 }}>
+              
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <MaterialCommunityIcons name="shield-edit-outline" size={24} color={editVerdict === 'Safe' ? successAccent : dangerAccent} />
+                  <Text style={{ fontSize: 18, fontWeight: '800', color: textColorPrimary }}>
+                    {classTarget?.isFromTriageTicket ? 'Classify & Promote Link' : 'Edit Link Classification'}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => setIsClassModalVisible(false)}>
+                  <Ionicons name="close" size={22} color={textColorSecondary} />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={{ fontSize: 12, color: textColorSecondary, marginBottom: 14 }}>
+                Configure ground-truth classification in Database 1. Mobile scanners will prioritize this verdict and category.
+              </Text>
+
+              {/* Target Domain & URL Info */}
+              <View style={{ backgroundColor: inputBgColor, padding: 12, borderRadius: 14, marginBottom: 16 }}>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: textColorPrimary }} numberOfLines={1}>
+                  {classTarget?.domain}
+                </Text>
+                <Text style={{ fontSize: 11, color: textColorSecondary, marginTop: 2 }} numberOfLines={2}>
+                  {classTarget?.url}
+                </Text>
+              </View>
+
+              {/* 1. Verdict Toggle */}
+              <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 0.8, color: textColorSecondary, marginBottom: 8 }}>
+                SECURITY VERDICT
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+                <TouchableOpacity
+                  onPress={() => {
+                    setEditVerdict('Safe');
+                    if (editCategory === 'Credential Harvesting' || editCategory === 'Financial / Bank Spoof' || editCategory === 'Malware Distribution' || editCategory === 'Brand Impersonation') {
+                      setEditCategory('Legitimate Corporate');
+                    }
+                  }}
+                  style={{
+                    flex: 1,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    paddingVertical: 12,
+                    borderRadius: 12,
+                    borderWidth: 2,
+                    borderColor: editVerdict === 'Safe' ? successAccent : 'transparent',
+                    backgroundColor: editVerdict === 'Safe' ? 'rgba(16, 185, 129, 0.18)' : (isDark ? '#233240' : '#E2E8F0'),
+                    gap: 6
+                  }}
+                >
+                  <Feather name="shield" size={16} color={editVerdict === 'Safe' ? successAccent : textColorSecondary} />
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: editVerdict === 'Safe' ? successAccent : textColorSecondary }}>
+                    SAFE (Whitelist)
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => {
+                    setEditVerdict('Phishing');
+                    if (editCategory === 'Academic Portal' || editCategory === 'Legitimate Corporate' || editCategory === 'Government / Utility' || editCategory === 'General Safe Domain') {
+                      setEditCategory('Credential Harvesting');
+                    }
+                  }}
+                  style={{
+                    flex: 1,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    paddingVertical: 12,
+                    borderRadius: 12,
+                    borderWidth: 2,
+                    borderColor: editVerdict === 'Phishing' ? dangerAccent : 'transparent',
+                    backgroundColor: editVerdict === 'Phishing' ? 'rgba(239, 68, 68, 0.18)' : (isDark ? '#233240' : '#E2E8F0'),
+                    gap: 6
+                  }}
+                >
+                  <Feather name="alert-triangle" size={16} color={editVerdict === 'Phishing' ? dangerAccent : textColorSecondary} />
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: editVerdict === 'Phishing' ? dangerAccent : textColorSecondary }}>
+                    PHISHING (Blacklist)
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* 2. Security Category / Class Presets */}
+              <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 0.8, color: textColorSecondary, marginBottom: 8 }}>
+                THREAT TAXONOMY / CLASS
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+                {(editVerdict === 'Phishing' 
+                  ? [
+                      'Credential Harvesting',
+                      'Financial / Bank Spoof',
+                      'Brand Impersonation',
+                      'Malware Distribution',
+                      'Account Takeover',
+                      'Custom'
+                    ]
+                  : [
+                      'Academic Portal',
+                      'Official Financial/Bank',
+                      'Government / Utility',
+                      'Legitimate Corporate',
+                      'General Safe Domain',
+                      'Custom'
+                    ]
+                ).map((cat) => {
+                  const isSelected = editCategory === cat;
+                  return (
+                    <TouchableOpacity
+                      key={cat}
+                      onPress={() => setEditCategory(cat)}
+                      style={{
+                        paddingVertical: 6,
+                        paddingHorizontal: 10,
+                        borderRadius: 10,
+                        backgroundColor: isSelected ? (isDark ? '#4DA8DA' : '#1E3246') : (isDark ? '#233240' : '#E2E8F0'),
+                        borderWidth: 1,
+                        borderColor: isSelected ? (isDark ? '#38BDF8' : '#0284C7') : 'transparent'
+                      }}
+                    >
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : textColorSecondary }}>
+                        {cat}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* Custom Category Input if selected */}
+              {editCategory === 'Custom' && (
+                <TextInput
+                  style={[styles.inputBox, { backgroundColor: inputBgColor, color: textColorPrimary, height: 44, marginBottom: 14, fontSize: 13 }]}
+                  placeholder="Enter custom taxonomy class (e.g. Crypto Drainer)..."
+                  placeholderTextColor={textColorSecondary}
+                  value={editCustomCategory}
+                  onChangeText={setEditCustomCategory}
+                />
+              )}
+
+              {/* 3. Analyst Notes */}
+              <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 0.8, color: textColorSecondary, marginBottom: 6 }}>
+                RESEARCHER AUDIT NOTES
+              </Text>
+              <TextInput
+                style={[styles.inputBox, { backgroundColor: inputBgColor, color: textColorPrimary, height: 50, marginBottom: 18, fontSize: 13 }]}
+                placeholder="Optional audit justification..."
+                placeholderTextColor={textColorSecondary}
+                value={editNotes}
+                onChangeText={setEditNotes}
+              />
+
+              {/* Modal Action Buttons */}
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity
+                  style={[styles.halfButton, { flex: 1, backgroundColor: isDark ? '#233240' : '#E2E8F0', borderColor: 'transparent' }]}
+                  onPress={() => setIsClassModalVisible(false)}
+                  disabled={isSavingClass}
+                >
+                  <Text style={[styles.halfButtonText, { color: textColorSecondary }]}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.halfButton, { flex: 1.5, backgroundColor: editVerdict === 'Safe' ? successAccent : dangerAccent, borderColor: 'transparent' }]}
+                  onPress={handleSaveClassification}
+                  disabled={isSavingClass}
+                >
+                  {isSavingClass ? (
+                    <ActivityIndicator size="small" color="#FFF" />
+                  ) : (
+                    <>
+                      <Feather name="check-circle" size={15} color="#FFF" />
+                      <Text style={[styles.halfButtonText, { color: '#FFF' }]}>
+                        {classTarget?.isFromTriageTicket ? 'Promote to DB 1' : 'Save Changes'}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+
+            </View>
           </View>
         </Modal>
       </View>
