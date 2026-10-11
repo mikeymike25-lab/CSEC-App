@@ -1,105 +1,158 @@
+"use no memo";
 import React from 'react';
 import { FlexWidget, TextWidget } from 'react-native-android-widget';
 
-export function CsecWidget({ history }: { history: any[] }) {
-  const recentItems = history ? history.slice(0, 4) : [];
+export function CsecWidget({ history }: { history?: any[] }) {
+  const safeHistory = Array.isArray(history) ? history : [];
+  const recentItems = safeHistory.slice(0, 3);
 
   return (
     <FlexWidget
+      clickAction="OPEN_APP"
       style={{
         height: 'match_parent',
         width: 'match_parent',
-        backgroundColor: '#16202A', // Premium dark blue-gray
-        borderRadius: 24,
-        padding: 16,
+        backgroundColor: '#0F172A', // Slate 900 dark theme
+        borderRadius: 20,
+        padding: 12,
         flexDirection: 'column',
+        justifyContent: 'space-between',
       }}
     >
-      {/* HEADER */}
+      {/* HEADER BAR */}
       <FlexWidget
         style={{
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginBottom: 16,
-          padding: 8,
+          marginBottom: 8,
+          paddingHorizontal: 10,
+          paddingVertical: 6,
           backgroundColor: '#1E293B',
-          borderRadius: 16,
+          borderRadius: 12,
         }}
       >
-        <TextWidget
-          text="🛡️ C-SEC"
-          style={{ fontSize: 16, color: '#FFFFFF', fontWeight: 'bold' }}
-        />
+        <FlexWidget style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <TextWidget
+            text="🛡️ C-SEC"
+            style={{ fontSize: 14, color: '#38BDF8', fontWeight: 'bold' }}
+          />
+          <TextWidget
+            text=" • SHIELD"
+            style={{ fontSize: 10, color: '#94A3B8', fontWeight: 'bold', marginLeft: 4 }}
+          />
+        </FlexWidget>
+
         <FlexWidget
           style={{
-            backgroundColor: '#3B82F6',
-            borderRadius: 8,
-            padding: 4,
+            backgroundColor: '#0284C7',
+            borderRadius: 6,
+            paddingHorizontal: 6,
+            paddingVertical: 2,
           }}
         >
           <TextWidget
-            text="LIVE SCAN"
-            style={{ fontSize: 10, color: '#FFFFFF', fontWeight: 'bold' }}
+            text="LIVE"
+            style={{ fontSize: 9, color: '#FFFFFF', fontWeight: 'bold' }}
           />
         </FlexWidget>
       </FlexWidget>
 
-      {/* RECENT SCANS LIST */}
+      {/* CONTENT: RECENT SCANS OR PROTECTION STATUS */}
       {recentItems.length === 0 ? (
-        <FlexWidget style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <TextWidget text="No scans detected yet." style={{ fontSize: 14, color: '#A9B4C0' }} />
+        <FlexWidget
+          style={{
+            flex: 1,
+            justifyContent: 'center',
+            alignItems: 'center',
+            backgroundColor: '#1E293B',
+            borderRadius: 14,
+            padding: 10,
+          }}
+        >
+          <TextWidget
+            text="🛡️ Protection Active"
+            style={{ fontSize: 13, color: '#F8FAFC', fontWeight: 'bold', marginBottom: 4 }}
+          />
+          <TextWidget
+            text="Tap here to open C-SEC and scan a URL."
+            style={{ fontSize: 11, color: '#94A3B8', textAlign: 'center' }}
+          />
         </FlexWidget>
       ) : (
-        recentItems.map((item, index) => {
-          const isSafe = item.verdict === 'Safe';
-          const isWarning = item.verdict === 'Suspicious';
-          const verdictColor = isSafe ? '#10B981' : isWarning ? '#F59E0B' : '#EF4444';
-          const emoji = isSafe ? '✅' : isWarning ? '⚠️' : '🚨';
+        <FlexWidget style={{ flex: 1, flexDirection: 'column', justifyContent: 'space-around' }}>
+          {recentItems.map((item: any, index: number) => {
+            const rawUrl = typeof item?.url === 'string' && item.url.trim().length > 0 ? item.url.trim() : 'Unknown URL';
+            const cleanUrl = rawUrl.replace(/^https?:\/\//i, '');
+            const displayUrl = cleanUrl.length > 26 ? cleanUrl.substring(0, 26) + '...' : cleanUrl;
 
-          return (
-            <FlexWidget
-              key={index}
-              style={{
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                backgroundColor: '#1F2D3D',
-                borderRadius: 12,
-                padding: 12,
-                marginBottom: 8,
-              }}
-            >
-              <FlexWidget style={{ flexDirection: 'column', flex: 1 }}>
-                <TextWidget
-                  text={item.url.length > 25 ? item.url.substring(0, 25) + '...' : item.url}
-                  maxLines={1}
-                  style={{ fontSize: 13, color: '#FFFFFF', fontWeight: 'bold' }}
-                />
-                <TextWidget
-                  text={item.date}
-                  style={{ fontSize: 10, color: '#8A9AA9', marginTop: 2 }}
-                />
-              </FlexWidget>
-              
+            let dateStr = 'Recent';
+            if (typeof item?.date === 'string' && item.date.length > 0) {
+              dateStr = item.date;
+            } else if (typeof item?.timestamp === 'number') {
+              const d = new Date(item.timestamp);
+              dateStr = `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+            }
+
+            const rawVerdict = String(item?.verdict || '').toLowerCase();
+            const isSafe = rawVerdict === 'safe' || rawVerdict.includes('clean');
+            const isSuspicious = rawVerdict === 'suspicious' || rawVerdict === 'warning';
+
+            const verdictEmoji = isSafe ? '✅' : isSuspicious ? '⚠️' : '🚨';
+            const badgeBg = isSafe ? '#064E3B' : isSuspicious ? '#78350F' : '#7F1D1D';
+            const badgeText = isSafe ? 'SAFE' : isSuspicious ? 'WARN' : 'RISK';
+            const badgeColor = isSafe ? '#34D399' : isSuspicious ? '#FBBF24' : '#F87171';
+
+            return (
               <FlexWidget
+                key={index}
                 style={{
-                  backgroundColor: '#2D4356', 
-                  borderRadius: 8,
-                  padding: 6,
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  marginLeft: 8,
+                  backgroundColor: '#1E293B',
+                  borderRadius: 10,
+                  paddingHorizontal: 8,
+                  paddingVertical: 6,
+                  marginBottom: index < recentItems.length - 1 ? 4 : 0,
                 }}
               >
-                <TextWidget
-                  text={emoji}
-                  style={{ fontSize: 14 }}
-                />
+                <FlexWidget style={{ flexDirection: 'column', flex: 1, marginRight: 6 }}>
+                  <TextWidget
+                    text={displayUrl}
+                    maxLines={1}
+                    truncate="END"
+                    style={{ fontSize: 12, color: '#F8FAFC', fontWeight: 'bold' }}
+                  />
+                  <TextWidget
+                    text={dateStr}
+                    style={{ fontSize: 9, color: '#94A3B8', marginTop: 1 }}
+                  />
+                </FlexWidget>
+
+                <FlexWidget
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    backgroundColor: badgeBg,
+                    borderRadius: 6,
+                    paddingHorizontal: 5,
+                    paddingVertical: 2,
+                  }}
+                >
+                  <TextWidget
+                    text={verdictEmoji}
+                    style={{ fontSize: 10, marginRight: 3 }}
+                  />
+                  <TextWidget
+                    text={badgeText}
+                    style={{ fontSize: 9, color: badgeColor, fontWeight: 'bold' }}
+                  />
+                </FlexWidget>
               </FlexWidget>
-            </FlexWidget>
-          );
-        })
+            );
+          })}
+        </FlexWidget>
       )}
     </FlexWidget>
   );

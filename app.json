@@ -78,7 +78,8 @@
               "label": "C-SEC History",
               "minWidth": "320dp",
               "minHeight": "120dp",
-              "description": "View recent scanned URLs"
+              "description": "View recent scanned URLs",
+              "resizeMode": "horizontal|vertical"
             }
           ]
         }

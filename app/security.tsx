@@ -309,6 +309,13 @@ export default function SecurityScreen() {
                   '@csec_active_session_id'
                 ]);
 
+                if (Platform.OS === 'android') {
+                  try {
+                    const { updateWidget } = require('../widget/WidgetTaskHandler');
+                    updateWidget();
+                  } catch (e) {}
+                }
+
                 // Step 5: Delete the actual Authentication Account
                 await deleteUser(user);
 
