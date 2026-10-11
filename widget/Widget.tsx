@@ -12,7 +12,7 @@ export function CsecWidget({ history }: { history?: any[] }) {
       style={{
         height: 'match_parent',
         width: 'match_parent',
-        backgroundColor: '#0B1120', // Ultra-deep midnight slate
+        backgroundColor: '#0B1120', // Midnight obsidian
         borderColor: '#1E293B',
         borderWidth: 1,
         borderRadius: 22,
@@ -36,13 +36,24 @@ export function CsecWidget({ history }: { history?: any[] }) {
         }}
       >
         <FlexWidget style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
+          <FlexWidget
+            style={{
+              backgroundColor: '#0369A1',
+              borderRadius: 6,
+              paddingHorizontal: 6,
+              paddingVertical: 2,
+              marginRight: 6,
+            }}
+          >
+            <TextWidget
+              text="C-SEC"
+              style={{ fontSize: 10, color: '#FFFFFF', fontWeight: 'bold' }}
+            />
+          </FlexWidget>
+
           <TextWidget
-            text="🛡️ C-SEC"
-            style={{ fontSize: 13, color: '#38BDF8', fontWeight: 'bold' }}
-          />
-          <TextWidget
-            text=" • SENTINEL"
-            style={{ fontSize: 9, color: '#64748B', fontWeight: 'bold', marginLeft: 4 }}
+            text="SENTINEL SHIELD"
+            style={{ fontSize: 10, color: '#94A3B8', fontWeight: 'bold' }}
           />
         </FlexWidget>
 
@@ -80,16 +91,29 @@ export function CsecWidget({ history }: { history?: any[] }) {
             padding: 10,
           }}
         >
+          <FlexWidget
+            style={{
+              backgroundColor: '#064E3B',
+              borderColor: '#059669',
+              borderWidth: 1,
+              borderRadius: 10,
+              paddingHorizontal: 8,
+              paddingVertical: 3,
+              marginBottom: 4,
+            }}
+          >
+            <TextWidget
+              text="● SHIELD ACTIVE"
+              style={{ fontSize: 9, color: '#34D399', fontWeight: 'bold' }}
+            />
+          </FlexWidget>
+
           <TextWidget
-            text="🛡️"
-            style={{ fontSize: 22, marginBottom: 2 }}
+            text="Zero Threats Detected"
+            style={{ fontSize: 13, color: '#F8FAFC', fontWeight: 'bold' }}
           />
           <TextWidget
-            text="Real-Time Protection Active"
-            style={{ fontSize: 12, color: '#F8FAFC', fontWeight: 'bold' }}
-          />
-          <TextWidget
-            text="Tap widget to scan a link with AI"
+            text="Tap widget to analyze a suspicious link"
             style={{ fontSize: 10, color: '#64748B', marginTop: 2, textAlign: 'center' }}
           />
         </FlexWidget>
@@ -122,13 +146,13 @@ export function CsecWidget({ history }: { history?: any[] }) {
             const isSafe = rawVerdict === 'safe' || rawVerdict.includes('clean');
             const isSuspicious = rawVerdict === 'suspicious' || rawVerdict === 'warning';
 
-            const verdictEmoji = isSafe ? '✅' : isSuspicious ? '⚠️' : '🚨';
-            const iconBg = isSafe ? '#064E3B' : isSuspicious ? '#78350F' : '#7F1D1D';
-            const badgeBg = isSafe ? '#064E3B' : isSuspicious ? '#78350F' : '#7F1D1D';
-            const badgeBorder = isSafe ? '#059669' : isSuspicious ? '#D97706' : '#DC2626';
-            const badgeText = isSafe ? '✓ SAFE' : isSuspicious ? '⚠ WARN' : '✕ RISK';
-            const badgeColor = isSafe ? '#34D399' : isSuspicious ? '#FBBF24' : '#F87171';
-            const subtitleText = isSafe ? `Clean • ${dateStr}` : isSuspicious ? `Caution • ${dateStr}` : `Threat • ${dateStr}`;
+            const statusGlyph = isSafe ? '✓' : isSuspicious ? '!' : '✕';
+            const glyphColor = isSafe ? '#34D399' : isSuspicious ? '#FBBF24' : '#F87171';
+            const boxBg = isSafe ? '#064E3B' : isSuspicious ? '#78350F' : '#7F1D1D';
+            const boxBorder = isSafe ? '#059669' : isSuspicious ? '#D97706' : '#DC2626';
+
+            const badgeText = isSafe ? 'SECURE' : isSuspicious ? 'CAUTION' : 'BLOCKED';
+            const subtitleText = isSafe ? `Clean • ${dateStr}` : isSuspicious ? `Suspicious • ${dateStr}` : `Threat • ${dateStr}`;
             const subtitleColor = isSafe ? '#10B981' : isSuspicious ? '#F59E0B' : '#EF4444';
 
             return (
@@ -147,18 +171,23 @@ export function CsecWidget({ history }: { history?: any[] }) {
                   marginBottom: index === 0 && recentItems.length > 1 ? 5 : 0,
                 }}
               >
-                {/* Icon box */}
+                {/* Minimalist status glyph badge */}
                 <FlexWidget
                   style={{
-                    width: 26,
-                    height: 26,
+                    width: 24,
+                    height: 24,
                     borderRadius: 7,
-                    backgroundColor: iconBg,
+                    backgroundColor: boxBg,
+                    borderColor: boxBorder,
+                    borderWidth: 1,
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
                 >
-                  <TextWidget text={verdictEmoji} style={{ fontSize: 12 }} />
+                  <TextWidget
+                    text={statusGlyph}
+                    style={{ fontSize: 12, color: glyphColor, fontWeight: 'bold' }}
+                  />
                 </FlexWidget>
 
                 {/* Details */}
@@ -175,29 +204,29 @@ export function CsecWidget({ history }: { history?: any[] }) {
                   />
                 </FlexWidget>
 
-                {/* Status Badge */}
+                {/* Security Status Pill */}
                 <FlexWidget
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',
-                    backgroundColor: badgeBg,
-                    borderColor: badgeBorder,
+                    backgroundColor: boxBg,
+                    borderColor: boxBorder,
                     borderWidth: 1,
-                    borderRadius: 8,
+                    borderRadius: 7,
                     paddingHorizontal: 6,
                     paddingVertical: 2,
                   }}
                 >
                   <TextWidget
                     text={badgeText}
-                    style={{ fontSize: 9, color: badgeColor, fontWeight: 'bold' }}
+                    style={{ fontSize: 9, color: glyphColor, fontWeight: 'bold' }}
                   />
                 </FlexWidget>
               </FlexWidget>
             );
           })}
 
-          {/* If only 1 scan exists, show a companion "Tap to scan" slot so it fills beautifully */}
+          {/* If only 1 scan exists, companion "New Scan" tile without emojis */}
           {recentItems.length === 1 && (
             <FlexWidget
               style={{
@@ -215,29 +244,40 @@ export function CsecWidget({ history }: { history?: any[] }) {
             >
               <FlexWidget
                 style={{
-                  width: 26,
-                  height: 26,
+                  width: 24,
+                  height: 24,
                   borderRadius: 7,
-                  backgroundColor: '#0369A1',
+                  backgroundColor: '#075985',
+                  borderColor: '#0284C7',
+                  borderWidth: 1,
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
               >
-                <TextWidget text="🔍" style={{ fontSize: 12 }} />
+                <TextWidget text="+" style={{ fontSize: 14, color: '#38BDF8', fontWeight: 'bold' }} />
               </FlexWidget>
 
               <FlexWidget style={{ flex: 1, flexDirection: 'column', marginLeft: 8, marginRight: 6 }}>
                 <TextWidget
-                  text="Scan New URL"
+                  text="Analyze New URL"
                   style={{ fontSize: 12, color: '#F8FAFC', fontWeight: 'bold' }}
                 />
                 <TextWidget
-                  text="Tap to open AI scanner"
+                  text="Tap to open scanner"
                   style={{ fontSize: 9, color: '#64748B', marginTop: 1 }}
                 />
               </FlexWidget>
 
-              <TextWidget text="➜" style={{ fontSize: 12, color: '#38BDF8', fontWeight: 'bold' }} />
+              <FlexWidget
+                style={{
+                  backgroundColor: '#0C4A6E',
+                  borderRadius: 6,
+                  paddingHorizontal: 6,
+                  paddingVertical: 2,
+                }}
+              >
+                <TextWidget text="SCAN >" style={{ fontSize: 9, color: '#38BDF8', fontWeight: 'bold' }} />
+              </FlexWidget>
             </FlexWidget>
           )}
         </FlexWidget>
