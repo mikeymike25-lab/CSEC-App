@@ -3,14 +3,16 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Keyboa
 import { useTheme } from '../../context/ThemeContext';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { auth } from '../../firebaseConfig';
+import TermsModal from '../../components/TermsModal';
 
 export default function GeminiScreen() {
   const { isDark } = useTheme();
   const [messages, setMessages] = useState<{role: 'user' | 'model', text: string}[]>([
-    { role: 'model', text: "I am The CSEC Sentinel, your advanced cybersecurity AI. My primary protocol is to educate and protect you from cyber threats, especially phishing attacks. State your inquiry or paste a suspicious link to begin."}
+    { role: 'model', text: "I am The CSEC Sentinel, your cybersecurity AI assistant powered by Gemini. My protocol is to help identify threats and explain attack vectors. Please note: AI responses are advisory — never share private keys, passwords, or sensitive credentials."}
   ]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isTermsModalVisible, setIsTermsModalVisible] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
   const [isKeyboardVisible, setKeyboardVisible] = useState(false);
 
@@ -126,11 +128,55 @@ export default function GeminiScreen() {
       keyboardVerticalOffset={90}
     >
       <View style={styles.header}>
-        <View style={styles.headerTitleContainer}>
-          <MaterialCommunityIcons name="chat-processing-outline" size={24} color={isDark ? '#4DA8DA' : '#2563EB'} />
-          <Text style={[styles.headerTitle, { color: textColorPrimary }]}>Chatbot</Text>
+        <View style={styles.headerTopRow}>
+          <View style={styles.headerTitleContainer}>
+            <MaterialCommunityIcons name="chat-processing-outline" size={24} color={isDark ? '#4DA8DA' : '#2563EB'} />
+            <Text style={[styles.headerTitle, { color: textColorPrimary }]}>Chatbot</Text>
+          </View>
+          <TouchableOpacity
+            style={[
+              styles.aiTermsBtn,
+              {
+                backgroundColor: isDark ? 'rgba(77, 168, 218, 0.15)' : '#EFF6FF',
+                borderColor: isDark ? '#4DA8DA' : '#93C5FD',
+              },
+            ]}
+            onPress={() => setIsTermsModalVisible(true)}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons
+              name="shield-check-outline"
+              size={13}
+              color={isDark ? '#4DA8DA' : '#2563EB'}
+              style={{ marginRight: 4 }}
+            />
+            <Text style={[styles.aiTermsBtnText, { color: isDark ? '#4DA8DA' : '#2563EB' }]}>AI Terms</Text>
+          </TouchableOpacity>
         </View>
         <Text style={[styles.headerSubtitle, { color: textColorSecondary }]}>Advanced AI Threat Expert</Text>
+
+        {/* AI Disclaimer / Safety Banner */}
+        <TouchableOpacity
+          style={[
+            styles.aiNoticeBanner,
+            {
+              backgroundColor: isDark ? 'rgba(2, 132, 199, 0.1)' : '#F0F9FF',
+              borderColor: isDark ? 'rgba(56, 189, 248, 0.25)' : '#BAE6FD',
+            },
+          ]}
+          onPress={() => setIsTermsModalVisible(true)}
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons
+            name="information"
+            size={14}
+            color={isDark ? '#38BDF8' : '#0284C7'}
+            style={{ marginRight: 6 }}
+          />
+          <Text style={[styles.aiNoticeText, { color: isDark ? '#94A3B8' : '#0369A1' }]}>
+            AI output is advisory. Do not share credentials. <Text style={{ textDecorationLine: 'underline', fontWeight: 'bold' }}>View AI Terms</Text>
+          </Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView 
@@ -193,6 +239,11 @@ export default function GeminiScreen() {
           </TouchableOpacity>
         </View>
       </View>
+      <TermsModal
+        visible={isTermsModalVisible}
+        onClose={() => setIsTermsModalVisible(false)}
+        defaultToAiTab={true}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -200,9 +251,14 @@ export default function GeminiScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 5 },
+  headerTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   headerTitleContainer: { flexDirection: 'row', alignItems: 'center' },
   headerTitle: { fontSize: 24, fontWeight: '800', marginLeft: 8 },
   headerSubtitle: { fontSize: 12, marginTop: 2, opacity: 0.8 },
+  aiTermsBtn: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4 },
+  aiTermsBtnText: { fontSize: 11, fontWeight: '700' },
+  aiNoticeBanner: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, marginTop: 8 },
+  aiNoticeText: { fontSize: 11, flex: 1, lineHeight: 15 },
   
   chatArea: { flex: 1 },
   messageWrapper: { flexDirection: 'row', marginBottom: 20, alignItems: 'flex-end' },

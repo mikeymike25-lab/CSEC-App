@@ -26,6 +26,10 @@ import { auth, db } from '../firebaseConfig';
 // --- THEME CONTEXT ---
 import { useTheme } from '../context/ThemeContext';
 
+// --- CUSTOM COMPONENTS ---
+import PasswordStrengthMeter, { getPasswordStrength } from '../components/PasswordStrengthMeter';
+import TermsModal from '../components/TermsModal';
+
 // --- CUSTOM ANIMATED TECH LOGO ---
 const AnimatedTechLogo = ({ isDark }: { isDark: boolean }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -148,9 +152,9 @@ export default function SignupScreen() {
       isValid = false;
     }
 
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d\w\W]{8,}$/;
-    if (!passwordRegex.test(password)) {
-      newErrors.password = 'Password needs 8+ chars, 1 uppercase, and 1 number';
+    const strength = getPasswordStrength(password);
+    if (!strength.isStrong) {
+      newErrors.password = 'Must have 8+ chars, uppercase, lowercase & a number/symbol';
       isValid = false;
     }
 
@@ -312,6 +316,7 @@ export default function SignupScreen() {
               </TouchableOpacity>
             </View>
             {errors.password ? <Text style={styles.errorText}>{errors.password}</Text> : null}
+            <PasswordStrengthMeter password={password} />
           </View>
 
           {/* Input: Confirm Password */}
@@ -382,53 +387,14 @@ export default function SignupScreen() {
       </KeyboardAvoidingView>
 
       {/* --- TERMS & CONDITIONS MODAL --- */}
-      <Modal
-        animationType="fade"
-        transparent={true}
+      <TermsModal
         visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: modalColor }]}>
-            
-            <View style={[styles.modalHeader, { backgroundColor: isDark ? '#2D4356' : '#2D4356' }]}>
-              <Text style={styles.modalTitle}>Terms And Conditions</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Ionicons name="close-circle-outline" size={28} color="#FFF" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={true}>
-              <Text style={[styles.modalBodyText, { color: isDark ? '#A9B4C0' : '#333' }]}>
-                <Text style={{fontWeight: 'bold', fontSize: 16}}>Welcome to C-SEC Sentinel.</Text>{'\n\n'}
-                
-                <Text style={{fontWeight: 'bold'}}>1. Acceptance of Terms</Text>{'\n'}
-                By creating an account and accessing the C-SEC Sentinel application, you agree to be bound by these Terms and Conditions and our Privacy Policy. If you do not agree to these terms, please do not use our services.{'\n\n'}
-                
-                <Text style={{fontWeight: 'bold'}}>2. Description of Service</Text>{'\n'}
-                C-SEC Sentinel provides heuristic URL analysis, threat detection, and risk assessment tools. The service is provided "as is" and relies on AI models and threat intelligence databases that may not guarantee 100% accuracy.{'\n\n'}
-                
-                <Text style={{fontWeight: 'bold'}}>3. User Privacy and Data Collection</Text>{'\n'}
-                We respect your privacy. In order to provide our security services, we process the URLs you submit for scanning. We employ zero-trust principles and do not sell your personal data to third parties. Account authentication data is securely handled via Firebase protocols.{'\n\n'}
-                
-                <Text style={{fontWeight: 'bold'}}>4. Acceptable Use</Text>{'\n'}
-                You agree to use C-SEC Sentinel only for lawful security verification purposes. You may not use this application to facilitate malicious activities, reverse-engineer our AI models, attempt to bypass access controls, or overwhelm our backend servers.{'\n\n'}
-                
-                <Text style={{fontWeight: 'bold'}}>5. Limitation of Liability</Text>{'\n'}
-                C-SEC Sentinel, its developers, and affiliated institutions shall not be held liable for any damages, data loss, or security breaches resulting from the use or inability to use this application. Users remain solely responsible for their own cybersecurity practices and decisions.
-              </Text>
-            </ScrollView>
-
-            <TouchableOpacity 
-              style={[styles.modalAcceptButton, { backgroundColor: isDark ? '#4DA8DA' : '#2D4356' }]} 
-              onPress={() => { setAgreeToTerms(true); setModalVisible(false); setErrors({...errors, terms: ''}); }}
-            >
-              <Text style={styles.modalAcceptButtonText}>Accept</Text>
-            </TouchableOpacity>
-
-          </View>
-        </View>
-      </Modal>
+        onClose={() => setModalVisible(false)}
+        onAccept={() => {
+          setAgreeToTerms(true);
+          setErrors({ ...errors, terms: '' });
+        }}
+      />
 
     </SafeAreaView>
   );

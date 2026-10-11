@@ -35,6 +35,10 @@ import {
 // --- THEME CONTEXT ---
 import { useTheme } from '../context/ThemeContext';
 
+// --- CUSTOM COMPONENTS ---
+import PasswordStrengthMeter, { getPasswordStrength } from '../components/PasswordStrengthMeter';
+import TermsModal from '../components/TermsModal';
+
 export default function SecurityScreen() {
   const router = useRouter();
   const { isDark } = useTheme();
@@ -57,6 +61,9 @@ export default function SecurityScreen() {
   const [isDeleteModalVisible, setIsDeleteModalVisible] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+
+  // Legal / Terms Modal State
+  const [isTermsModalVisible, setIsTermsModalVisible] = useState(false);
 
   // --- DYNAMIC COLORS ---
   const bgColor = isDark ? '#121A21' : '#F9F7E8';
@@ -220,8 +227,12 @@ export default function SecurityScreen() {
       Alert.alert("Error", "New passwords do not match.");
       return;
     }
-    if (newPassword.length < 6) {
-      Alert.alert("Security Warning", "New password must be at least 6 characters long.");
+    const strength = getPasswordStrength(newPassword);
+    if (!strength.isStrong) {
+      Alert.alert(
+        "Weak Password",
+        "New password must be at least 8 characters long and include an uppercase letter, lowercase letter, and a number or symbol."
+      );
       return;
     }
 
@@ -393,6 +404,7 @@ export default function SecurityScreen() {
                 onChangeText={setNewPassword}
                 autoCapitalize="none"
               />
+              <PasswordStrengthMeter password={newPassword} />
             </View>
 
             <View style={styles.inputGroup}>
@@ -533,6 +545,40 @@ export default function SecurityScreen() {
             )}
           </View>
 
+          {/* --- LEGAL & SAFETY POLICIES --- */}
+          <View style={[styles.card, { backgroundColor: cardColor }]}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.iconWrapper, { backgroundColor: isDark ? 'rgba(77, 168, 218, 0.1)' : '#EBF5FB' }]}>
+                <MaterialCommunityIcons name="shield-check-outline" size={20} color={blueAccent} />
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={[styles.cardTitle, { color: textColorPrimary, marginLeft: 0 }]}>
+                  Legal & Safety Policies
+                </Text>
+                <Text style={[styles.cardSubtitle, { color: textColorSecondary }]}>
+                  Terms of Service, Zero-Trust Privacy & AI Disclaimers
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={[
+                styles.policyBtn,
+                {
+                  borderColor: isDark ? '#334155' : '#E2E8F0',
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
+                },
+              ]}
+              onPress={() => setIsTermsModalVisible(true)}
+              activeOpacity={0.7}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Feather name="file-text" size={16} color={blueAccent} style={{ marginRight: 10 }} />
+                <Text style={[styles.policyBtnText, { color: textColorPrimary }]}>Review Terms & AI Policies</Text>
+              </View>
+              <Feather name="chevron-right" size={18} color={textColorSecondary} />
+            </TouchableOpacity>
+          </View>
+
           {/* --- DANGER ZONE (Delete Account) --- */}
           <View style={[styles.card, { backgroundColor: cardColor, borderColor: redAccent, borderWidth: 1 }]}>
             <View style={styles.cardHeader}>
@@ -607,6 +653,12 @@ export default function SecurityScreen() {
           </KeyboardAvoidingView>
         </Modal>
 
+        {/* --- LEGAL & PRIVACY MODAL --- */}
+        <TermsModal
+          visible={isTermsModalVisible}
+          onClose={() => setIsTermsModalVisible(false)}
+        />
+
       </View>
     </SafeAreaView>
   );
@@ -664,6 +716,20 @@ const styles = StyleSheet.create({
   dangerText: { fontSize: 14, lineHeight: 22, marginBottom: 20 },
   dangerBtn: { paddingVertical: 16, borderRadius: 20, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(239, 68, 68, 0.3)' },
   dangerBtnText: { fontSize: 14, fontWeight: 'bold', letterSpacing: 1 },
+
+  policyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  policyBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
 
   modalOverlayBottom: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
   modalContainer: { borderTopLeftRadius: 40, borderTopRightRadius: 40, padding: 30, shadowColor: '#000', shadowOffset: { width: 0, height: -10 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 20 },
