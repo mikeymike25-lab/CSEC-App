@@ -1,6 +1,7 @@
 # Environment variables
 .env
 .env.*
+!.env.example
 
 # Python-generated files & virtual environments
 __pycache__/
@@ -11,6 +12,8 @@ wheels/
 *.egg-info
 .venv/
 backend/.venv/
+.tld_cache/
+backend/.tld_cache/
 
 # Heavy ML Models & Datasets (Removed so they can be pushed to Render)
 
@@ -26,4 +29,9 @@ expo-env.d.ts
 expo_output.txt
 desktop.ini
 .DS_Store
+
+# Keystores & Signing Certificates (Never commit release signing credentials)
+*.jks
+*.keystore
+!android/app/debug.keystore
 # @end expo-cli

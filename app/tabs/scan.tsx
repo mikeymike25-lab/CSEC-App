@@ -15,9 +15,9 @@ import {
 } from 'react-native';
 
 // --- FIREBASE IMPORTS ---
-import { getAuth } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '../../firebaseConfig';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { db, auth } from '../../firebaseConfig';
 
 import { useTheme } from '../../context/ThemeContext';
 
@@ -65,25 +65,29 @@ export default function ScanScreen() {
 
   // --- NEW: REAL-TIME STATUS LISTENER ---
   useEffect(() => {
-    const auth = getAuth();
-    const user = auth.currentUser;
-
-    if (user) {
-      // Listen to the user's document to see if an Admin suspends/bans them
-      const unsub = onSnapshot(
-        doc(db, 'users', user.uid), 
-        (docSnap) => {
-          if (docSnap.exists()) {
-            const status = docSnap.data().accountStatus || 'active';
-            setAccountStatus(status);
+    let unsubUserDoc: (() => void) | null = null;
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+      if (unsubUserDoc) { unsubUserDoc(); unsubUserDoc = null; }
+      if (user) {
+        unsubUserDoc = onSnapshot(
+          doc(db, 'users', user.uid), 
+          (docSnap) => {
+            if (docSnap.exists()) {
+              const status = docSnap.data().accountStatus || 'active';
+              setAccountStatus(status);
+            }
+          },
+          (error) => {
+            console.warn("Scan Status Listen Error:", error.code);
           }
-        },
-        (error) => {
-          console.warn("Scan Status Listen Error:", error.code);
-        }
-      );
-      return () => unsub(); // Cleanup on unmount
-    }
+        );
+      }
+    });
+
+    return () => {
+      if (unsubUserDoc) unsubUserDoc();
+      unsubAuth();
+    };
   }, []);
 
   const handlePaste = async () => {
@@ -106,6 +110,7 @@ export default function ScanScreen() {
       const newEntry = {
         id: formattedId, 
         date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        timestamp: Date.now(),
         url: url,
         verdict: resultData.verdict,
         protocol: resultData.protocol,
@@ -115,7 +120,9 @@ export default function ScanScreen() {
         sentinelAnalysis: resultData.sentinelAnalysis,
       };
 
-      const updatedHistory = [newEntry, ...history];
+      // Filter out duplicate entries for the same URL so freshest scan is top
+      const filteredHistory = history.filter((item: any) => item.url?.toLowerCase() !== url.toLowerCase());
+      const updatedHistory = [newEntry, ...filteredHistory];
       await AsyncStorage.setItem('csec_history', JSON.stringify(updatedHistory));
       console.log(`Scan ${formattedId} saved to history successfully!`);
     } catch (e) {
@@ -123,8 +130,7 @@ export default function ScanScreen() {
     }
   };
 
-  const handleScan = async () => {
-    const auth = getAuth();
+  const handleScan = async (forceLiveScan: boolean = false) => {
     const user = auth.currentUser;
 
     // --- SECURITY GATE 1: ACCOUNT STATUS LOCKDOWN ---
@@ -163,38 +169,123 @@ export default function ScanScreen() {
     setIsCached(false);
 
     try {
-      // --- LOCAL HISTORY CROSS-REFERENCE (CACHE) ---
-      const existingHistory = await AsyncStorage.getItem('csec_history');
-      if (existingHistory) {
-        const historyArray = JSON.parse(existingHistory);
-        const cachedMatch = historyArray.find((item: any) => item.url.toLowerCase() === cleanUrl.toLowerCase());
+      // --- LOCAL HISTORY CROSS-REFERENCE (CACHE WITH 24H TTL) ---
+      const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 Hours
+      if (!forceLiveScan) {
+        const existingHistory = await AsyncStorage.getItem('csec_history');
+        if (existingHistory) {
+          const historyArray = JSON.parse(existingHistory);
+          const cachedMatch = historyArray.find((item: any) => item.url.toLowerCase() === cleanUrl.toLowerCase());
 
-        if (cachedMatch) {
-          setIsCached(true);
-          setScanResult(cachedMatch.verdict);
-          setProtocol(cachedMatch.protocol); 
-          setConfidence(cachedMatch.confidence);
-          setSummary(cachedMatch.summary);
-          setTechnicalDetails(`[Retrieved from Local Cache] ${cachedMatch.technicalDetails}`);
-          setSentinelAnalysis(cachedMatch.sentinelAnalysis || 'No AI analysis saved for this scan.');
-          setIsScanning(false);
-          return; 
+          // Verify if cache is still within 24h Time-To-Live
+          const isExpired = !cachedMatch?.timestamp || (Date.now() - cachedMatch.timestamp > CACHE_TTL_MS);
+
+          if (cachedMatch && !isExpired) {
+            setIsCached(true);
+            setScanResult(cachedMatch.verdict);
+            setProtocol(cachedMatch.protocol); 
+            setConfidence(cachedMatch.confidence);
+            setSummary(cachedMatch.summary);
+            setTechnicalDetails(`[Retrieved from Local Cache] ${cachedMatch.technicalDetails}`);
+            setSentinelAnalysis(cachedMatch.sentinelAnalysis || 'No AI analysis saved for this scan.');
+            setIsScanning(false);
+            return; 
+          }
         }
+      }
+
+      // --- DYNAMIC THREAT INTEL OVERRIDE (GATE 1 & GATE 2 PRE-CHECK) ---
+      try {
+        const threatDocSnap = await getDoc(doc(db, 'system', 'threat_intel'));
+        if (threatDocSnap.exists()) {
+          const threatData = threatDocSnap.data();
+          const dynamicWhitelist: string[] = Array.isArray(threatData?.whitelist) ? threatData.whitelist : [];
+          const dynamicBlacklist: string[] = Array.isArray(threatData?.blacklist) ? threatData.blacklist : [];
+
+          const strippedHost = cleanUrl.toLowerCase().replace(/^(?:https?:\/\/)?(?:www\.)?/i, '').split('/')[0];
+
+          if (dynamicBlacklist.some(b => cleanUrl.toLowerCase().includes(b.toLowerCase()) || strippedHost === b.toLowerCase())) {
+            const verdict = 'Phishing';
+            const protocol = 'Global Blacklist (Threat Intel)';
+            const summary = 'This URL has been flagged as a confirmed threat by C-SEC Security Intelligence.';
+            const tech = 'Threat verdict. Matched dynamic administrative blacklist override.';
+            setScanResult(verdict);
+            setProtocol(protocol);
+            setConfidence('100.0');
+            setSummary(summary);
+            setTechnicalDetails(tech);
+            setSentinelAnalysis('This link was explicitly marked malicious in the C-SEC Threat Intelligence Matrix.');
+            saveScanToHistory({
+              verdict,
+              protocol,
+              confidence: '100.0',
+              summary,
+              technicalDetails: tech,
+              sentinelAnalysis: 'Explicitly blacklisted by security administrators.'
+            });
+            setIsScanning(false);
+            return;
+          }
+
+          if (dynamicWhitelist.some(w => cleanUrl.toLowerCase().includes(w.toLowerCase()) || strippedHost === w.toLowerCase())) {
+            const verdict = 'Safe';
+            const protocol = 'Platform Whitelist (Threat Intel)';
+            const summary = 'This URL is verified safe by C-SEC Security Intelligence override.';
+            const tech = 'Verified via Administrative Whitelist Protocol. 0% probability of threat.';
+            setScanResult(verdict);
+            setProtocol(protocol);
+            setConfidence('0.0');
+            setSummary(summary);
+            setTechnicalDetails(tech);
+            setSentinelAnalysis('This domain has been verified and cleared by C-SEC Security Administrators.');
+            saveScanToHistory({
+              verdict,
+              protocol,
+              confidence: '0.0',
+              summary,
+              technicalDetails: tech,
+              sentinelAnalysis: 'Verified and cleared by administrative threat intelligence.'
+            });
+            setIsScanning(false);
+            return;
+          }
+        }
+      } catch (threatErr) {
+        console.warn("Dynamic threat intel pre-check skipped:", threatErr);
       }
 
       // --- SERVER ARCHITECTURE ---
       if (deepAiEnabled) {
         const apiUrl = 'https://csec-sentinel-api.onrender.com/analyze-link';
+        const user = auth.currentUser;
+        const idToken = user ? await user.getIdToken() : '';
+
+        const headers: Record<string, string> = {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Bypass-Tunnel-Reminder': 'true'
+        };
+        if (idToken) {
+          headers['Authorization'] = `Bearer ${idToken}`;
+        }
 
         const response = await fetch(apiUrl, {
           method: 'POST',
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-            'Bypass-Tunnel-Reminder': 'true'
-          },
+          headers,
           body: JSON.stringify({ url: cleanUrl }), 
         });
+
+        if (response.status === 401) {
+          Alert.alert("Authentication Required", "Please log in to perform deep security scans.");
+          setIsScanning(false);
+          return;
+        }
+
+        if (response.status === 429) {
+          Alert.alert("Rate Limit Exceeded", "You have submitted too many scan requests. Please wait a moment before trying again.");
+          setIsScanning(false);
+          return;
+        }
 
         const data = await response.json();
 
@@ -345,7 +436,7 @@ export default function ScanScreen() {
             { backgroundColor: accountStatus !== 'active' ? redAccent : (isScanning ? '#606A75' : (isDark ? '#4DA8DA' : '#2D4356')) }
           ]} 
           activeOpacity={0.8}
-          onPress={handleScan}
+          onPress={() => handleScan(false)}
           disabled={isScanning}
         >
           {isScanning ? (
@@ -394,6 +485,26 @@ export default function ScanScreen() {
                     {getVerdictText()}
                  </Text>
               </View>
+
+              {isCached && (
+                <TouchableOpacity 
+                  style={[
+                    styles.rescanButton, 
+                    { 
+                      borderColor: isDark ? '#4DA8DA' : '#2D4356',
+                      backgroundColor: isDark ? 'rgba(77, 168, 218, 0.12)' : 'rgba(45, 67, 86, 0.08)'
+                    }
+                  ]}
+                  onPress={() => handleScan(true)}
+                  disabled={isScanning}
+                  activeOpacity={0.7}
+                >
+                  <MaterialCommunityIcons name="refresh" size={16} color={isDark ? '#4DA8DA' : '#2D4356'} />
+                  <Text style={[styles.rescanButtonText, { color: isDark ? '#4DA8DA' : '#2D4356' }]}>
+                    FORCE LIVE RE-SCAN (BYPASS CACHE)
+                  </Text>
+                </TouchableOpacity>
+              )}
 
               <Text style={[styles.sectionLabel, { color: textColorSecondary }]}>LIST PROTOCOL</Text>
               <View style={styles.protocolContainer}>
@@ -593,8 +704,24 @@ const styles = StyleSheet.create({
   statusSubtitle: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
 
   resultDetailsContainer: { width: '100%', marginTop: 10 },
-  resultHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 30 },
+  resultHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
   resultHeaderText: { fontSize: 18, fontWeight: '800', letterSpacing: 1, marginLeft: 10 },
+  rescanButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    marginBottom: 24,
+    gap: 8,
+  },
+  rescanButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
   
   sectionLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 1, marginBottom: 12, opacity: 0.8 },
   

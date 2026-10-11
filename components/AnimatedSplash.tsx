@@ -114,7 +114,7 @@ export default function AnimatedSplash({ onAnimationComplete }: AnimatedSplashPr
 
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  logo: { width: 250, height: 250, marginBottom: 40 },
+  logo: { width: 140, height: 140, marginBottom: 40 },
   techTextContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   icon: { marginRight: 8 },
   techText: { fontSize: 12, fontWeight: '800', letterSpacing: 2, textTransform: 'uppercase' },

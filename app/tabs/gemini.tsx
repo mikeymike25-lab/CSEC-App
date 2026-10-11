@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, Keyboard } from 'react-native';
 import { useTheme } from '../../context/ThemeContext';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { auth } from '../../firebaseConfig';
 
 export default function GeminiScreen() {
   const { isDark } = useTheme();
@@ -75,16 +76,33 @@ export default function GeminiScreen() {
 
       // NOTE: Using localhost/codespace URL based on the scan.tsx endpoint but updated for /gemini-chat
       const apiUrl = 'https://csec-sentinel-api.onrender.com/gemini-chat';
+      const user = auth.currentUser;
+      const idToken = user ? await user.getIdToken() : '';
+
+      const headers: Record<string, string> = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Bypass-Tunnel-Reminder': 'true'
+      };
+      if (idToken) {
+        headers['Authorization'] = `Bearer ${idToken}`;
+      }
 
       const response = await fetch(apiUrl, {
         method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          'Bypass-Tunnel-Reminder': 'true'
-        },
+        headers,
         body: JSON.stringify({ message: userMessage, history: formattedHistory }),
       });
+
+      if (response.status === 401) {
+        setMessages(prev => [...prev, { role: 'model', text: "Authentication required. Please log in to chat with The Sentinel." }]);
+        return;
+      }
+
+      if (response.status === 429) {
+        setMessages(prev => [...prev, { role: 'model', text: "Rate limit reached. Please wait a minute before sending another message." }]);
+        return;
+      }
 
       const data = await response.json();
 

@@ -17,20 +17,14 @@ import {
 } from 'react-native';
 
 // --- FIREBASE & GOOGLE IMPORTS ---
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { GoogleAuthProvider, signInWithCredential, signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore'; 
 import { auth, db } from '../firebaseConfig';
 import { Platform } from 'react-native';
+import { performGoogleSignIn } from '../services/googleAuth';
 
 // --- THEME CONTEXT ---
 import { useTheme } from '../context/ThemeContext';
-
-// --- GOOGLE OAUTH CONFIGURATION ---
-// MUST REPLACE WITH YOUR ACTUAL WEB CLIENT ID FROM FIREBASE CONSOLE
-GoogleSignin.configure({
-  webClientId: '251221632759-pskohqm9190nq399sptr9v7b6vha5gqf.apps.googleusercontent.com', 
-});
 
 // --- CUSTOM ANIMATED TECH LOGO ---
 const AnimatedTechLogo = ({ isDark }: { isDark: boolean }) => {
@@ -120,10 +114,16 @@ export default function LoginScreen() {
   // --- HELPER: CHECK DIRECTIVES ---
   const checkGlobalDirectives = async (user: any) => {
     if (isMaintenance) {
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
-      const role = userDoc.exists() ? userDoc.data().role : 'user';
+      const tokenResult = await user.getIdTokenResult();
+      let isAdmin = tokenResult.claims.admin === true;
+      if (!isAdmin) {
+        const userSnap = await getDoc(doc(db, 'users', user.uid));
+        if (userSnap.exists() && userSnap.data()?.role === 'admin') {
+          isAdmin = true;
+        }
+      }
 
-      if (role !== 'admin') {
+      if (!isAdmin) {
         await auth.signOut();
         throw new Error('SYSTEM LOCKDOWN: The network is currently down for maintenance. Only Administrators can access the app at this time.');
       }
@@ -156,25 +156,13 @@ export default function LoginScreen() {
     }
   };
 
-  // --- GOOGLE OAUTH LOGIN LOGIC (FIXED FOR V11+) ---
+  // --- GOOGLE OAUTH LOGIN LOGIC (CROSS-PLATFORM) ---
   const handleGoogleLogin = async () => {
     setErrorMessage('');
     setIsLoading(true);
     
     try {
-      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-      
-      // The newest library version wraps the token in a data object!
-      const response = await GoogleSignin.signIn();
-      const idToken = response.data?.idToken;
-      
-      if (!idToken) {
-        throw new Error("Google Sign-In failed to return an ID Token.");
-      }
-
-      const googleCredential = GoogleAuthProvider.credential(idToken);
-      const userCredential = await signInWithCredential(auth, googleCredential);
-      const user = userCredential.user;
+      const user = await performGoogleSignIn();
 
       const userDocRef = doc(db, 'users', user.uid);
       const userDocSnap = await getDoc(userDocRef);
@@ -198,7 +186,7 @@ export default function LoginScreen() {
       router.replace('/tabs');
     } catch (error: any) {
       console.log("Google Login Error:", error);
-      if (error.code === 'SIGN_IN_CANCELLED') {
+      if (error.code === 'SIGN_IN_CANCELLED' || error.code === 'auth/popup-closed-by-user') {
         // User closed the pop-up, silently ignore
       } else {
         setErrorMessage('Google Authentication failed. Please try again.');

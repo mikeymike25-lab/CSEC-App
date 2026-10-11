@@ -1,6 +1,6 @@
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -17,9 +17,20 @@ import {
 } from 'react-native';
 
 // --- FIREBASE IMPORTS ---
-import { EmailAuthProvider, deleteUser, getAuth, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
-import { deleteDoc, doc } from 'firebase/firestore';
+import { EmailAuthProvider, deleteUser, getAuth, onAuthStateChanged, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
+import { collection, deleteDoc, doc, getDocs, query, where } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth, db } from '../firebaseConfig';
+
+// --- SESSION MANAGEMENT SERVICE ---
+import { 
+  DeviceSession, 
+  getOrCreateSessionId, 
+  registerActiveSession,
+  subscribeToUserSessions, 
+  revokeDeviceSession, 
+  revokeAllOtherSessions 
+} from '../services/sessionService';
 
 // --- THEME CONTEXT ---
 import { useTheme } from '../context/ThemeContext';
@@ -35,6 +46,13 @@ export default function SecurityScreen() {
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  // Active Sessions State
+  const [sessions, setSessions] = useState<DeviceSession[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(true);
+  const [revokingSessionId, setRevokingSessionId] = useState<string | null>(null);
+  const [isRevokingAll, setIsRevokingAll] = useState(false);
+
   // Delete Account State
   const [isDeleteModalVisible, setIsDeleteModalVisible] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
@@ -49,6 +67,148 @@ export default function SecurityScreen() {
   const redAccent = '#EF4444';
   const blueAccent = '#4DA8DA';
   const greenAccent = '#10B981';
+
+  // --- SUBSCRIBE TO ACTIVE SESSIONS (REAL-TIME) ---
+  useEffect(() => {
+    let unsubSessions: (() => void) | null = null;
+    setIsLoadingSessions(true);
+
+    const unsubAuth = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        setSessions([]);
+        setIsLoadingSessions(false);
+        return;
+      }
+
+      try {
+        // Guarantee current device session is registered in Firestore
+        await registerActiveSession(user.uid, () => {});
+        
+        const currId = await getOrCreateSessionId();
+        setCurrentSessionId(currId);
+
+        if (unsubSessions) unsubSessions();
+        unsubSessions = subscribeToUserSessions(user.uid, currId, (activeSessions) => {
+          setSessions(activeSessions);
+          setIsLoadingSessions(false);
+        });
+      } catch (err) {
+        console.warn("[security.tsx] Error initializing active sessions:", err);
+        setIsLoadingSessions(false);
+      }
+    });
+
+    return () => {
+      unsubAuth();
+      if (unsubSessions) unsubSessions();
+    };
+  }, []);
+
+  // --- REMOTELY LOG OUT A SINGLE DEVICE ---
+  const handleRevokeSession = (session: DeviceSession) => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const performRevoke = async () => {
+      try {
+        setRevokingSessionId(session.id);
+        await revokeDeviceSession(user.uid, session.id);
+      } catch (err) {
+        console.error("Failed to revoke device session:", err);
+        Alert.alert("Error", "Could not log out this device. Please try again.");
+      } finally {
+        setRevokingSessionId(null);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm) {
+        if (window.confirm(`Log out ${session.deviceName}? This device will be disconnected immediately.`)) {
+          performRevoke();
+        }
+      } else {
+        performRevoke();
+      }
+    } else {
+      Alert.alert(
+        "Log Out Device?",
+        `Are you sure you want to remotely log out "${session.deviceName}"? It will be disconnected immediately.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Log Out", style: "destructive", onPress: performRevoke }
+        ]
+      );
+    }
+  };
+
+  // --- LOG OUT ALL OTHER DEVICES ---
+  const handleRevokeAllOtherSessions = () => {
+    const user = auth.currentUser;
+    if (!user || !currentSessionId) return;
+
+    const otherSessionsCount = sessions.filter(s => !s.isCurrent).length;
+    if (otherSessionsCount === 0) {
+      Alert.alert("Notice", "No other active sessions detected.");
+      return;
+    }
+
+    const performRevokeAll = async () => {
+      try {
+        setIsRevokingAll(true);
+        const count = await revokeAllOtherSessions(user.uid, currentSessionId);
+        Alert.alert("Success", `Successfully logged out ${count} other device${count === 1 ? '' : 's'}.`);
+      } catch (err) {
+        console.error("Failed to revoke other sessions:", err);
+        Alert.alert("Error", "Could not log out other devices. Please try again.");
+      } finally {
+        setIsRevokingAll(false);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm) {
+        if (window.confirm(`Log out all other ${otherSessionsCount} device(s)? All other active sessions will be terminated.`)) {
+          performRevokeAll();
+        }
+      } else {
+        performRevokeAll();
+      }
+    } else {
+      Alert.alert(
+        "Log Out All Other Devices?",
+        `Are you sure you want to log out all other ${otherSessionsCount} device(s)? Only this current device will stay logged in.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Log Out All", style: "destructive", onPress: performRevokeAll }
+        ]
+      );
+    }
+  };
+
+  // Helper: Device Icon selector
+  const getDeviceIcon = (session: DeviceSession) => {
+    if (session.deviceType === 'desktop' || session.platform === 'web') {
+      return <Ionicons name="laptop-outline" size={24} color={textColorPrimary} />;
+    } else if (session.deviceType === 'tablet') {
+      return <Ionicons name="tablet-portrait-outline" size={24} color={textColorPrimary} />;
+    }
+    return <Ionicons name="phone-portrait-outline" size={24} color={textColorPrimary} />;
+  };
+
+  // Helper: Format Last Active time
+  const formatLastActive = (lastActive: number, isCurrent?: boolean) => {
+    if (isCurrent) return "Current Device";
+    if (!lastActive) return "Active recently";
+    const diffMs = Date.now() - lastActive;
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 2) return "Active just now";
+    if (diffMins < 60) return `Active ${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `Active ${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays === 1) return "Active yesterday";
+    return `Active ${diffDays}d ago`;
+  };
 
   // --- 1. CHANGE PASSWORD LOGIC ---
   const handleChangePassword = async () => {
@@ -118,13 +278,41 @@ export default function SecurityScreen() {
                 const credential = EmailAuthProvider.credential(user.email, deletePassword);
                 await reauthenticateWithCredential(user, credential);
 
-                // Step 2: Delete user document from Firestore Database
+                // Step 2: Query and delete all reports submitted by this user from Firestore
+                try {
+                  const reportsQuery = query(collection(db, "reports"), where("uid", "==", user.uid));
+                  const reportsSnap = await getDocs(reportsQuery);
+                  const deleteReportPromises = reportsSnap.docs.map(docSnap => deleteDoc(docSnap.ref));
+                  await Promise.all(deleteReportPromises);
+                } catch (reportErr) {
+                  console.warn("Could not delete user reports during account purge:", reportErr);
+                }
+
+                // Step 2b: Query and delete all session records for this user
+                try {
+                  const sessionsSnap = await getDocs(collection(db, "users", user.uid, "sessions"));
+                  const deleteSessionPromises = sessionsSnap.docs.map(docSnap => deleteDoc(docSnap.ref));
+                  await Promise.all(deleteSessionPromises);
+                } catch (sessErr) {
+                  console.warn("Could not delete user sessions during account purge:", sessErr);
+                }
+
+                // Step 3: Delete user profile document from Firestore Database
                 await deleteDoc(doc(db, "users", user.uid));
 
-                // Step 3: Delete the actual Authentication Account
+                // Step 4: Complete purge of local AsyncStorage to prevent data remanence
+                await AsyncStorage.multiRemove([
+                  'csec_history',
+                  'csec_notification_prefs',
+                  'csec_last_broadcast',
+                  'notified_report_status',
+                  '@csec_active_session_id'
+                ]);
+
+                // Step 5: Delete the actual Authentication Account
                 await deleteUser(user);
 
-                Alert.alert("Account Deleted", "Your account has been permanently removed.");
+                Alert.alert("Account Deleted", "Your account and all associated data have been permanently removed.");
                 router.replace('/'); // Send back to login
               }
             } catch (error: any) {
@@ -233,27 +421,109 @@ export default function SecurityScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* --- ACTIVE SESSIONS (Visual Only) --- */}
+          {/* --- ACTIVE SESSIONS (Real-time Multi-Device Management) --- */}
           <View style={[styles.card, { backgroundColor: cardColor }]}>
             <View style={styles.cardHeader}>
               <View style={[styles.iconWrapper, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.1)' : '#E8F5E9' }]}>
                 <MaterialCommunityIcons name="cellphone-link" size={20} color={greenAccent} />
               </View>
-              <Text style={[styles.cardTitle, { color: textColorPrimary }]}>Active Sessions</Text>
-            </View>
-            
-            <View style={styles.sessionRow}>
-              <View style={styles.sessionIconBox}>
-                <Ionicons name="phone-portrait-outline" size={24} color={textColorPrimary} />
-              </View>
-              <View style={styles.sessionDetails}>
-                <Text style={[styles.sessionName, { color: textColorPrimary }]}>This Device</Text>
-                <Text style={[styles.sessionLocation, { color: textColorSecondary }]}>CSEC Sentinel Mobile App</Text>
-              </View>
-              <View style={[styles.activePill, { backgroundColor: greenAccent + '20' }]}>
-                <Text style={[styles.activePillText, { color: greenAccent }]}>ACTIVE NOW</Text>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={[styles.cardTitle, { color: textColorPrimary, marginLeft: 0 }]}>
+                  Active Sessions {sessions.length > 0 ? `(${sessions.length})` : ''}
+                </Text>
+                <Text style={[styles.cardSubtitle, { color: textColorSecondary }]}>
+                  Devices currently authenticated to your account
+                </Text>
               </View>
             </View>
+
+            {isLoadingSessions ? (
+              <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                <ActivityIndicator color={greenAccent} />
+                <Text style={{ color: textColorSecondary, fontSize: 12, marginTop: 8 }}>Scanning active sessions...</Text>
+              </View>
+            ) : sessions.length === 0 ? (
+              <View style={{ paddingVertical: 12 }}>
+                <Text style={{ color: textColorSecondary, fontSize: 13 }}>No active sessions detected.</Text>
+              </View>
+            ) : (
+              <View>
+                {sessions.map((session, index) => {
+                  const isCurrent = session.isCurrent;
+                  const isRevoking = revokingSessionId === session.id;
+
+                  return (
+                    <View key={session.id}>
+                      {index > 0 && (
+                        <View style={[styles.sessionDivider, { backgroundColor: isDark ? '#2D4356' : '#F2F0E4' }]} />
+                      )}
+                      <View style={styles.sessionRow}>
+                        <View style={[styles.sessionIconBox, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}>
+                          {getDeviceIcon(session)}
+                        </View>
+                        <View style={styles.sessionDetails}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <Text style={[styles.sessionName, { color: textColorPrimary }]} numberOfLines={1}>
+                              {session.deviceName}
+                            </Text>
+                            {isCurrent && (
+                              <View style={[styles.currentPill, { backgroundColor: greenAccent + '20' }]}>
+                                <Text style={[styles.currentPillText, { color: greenAccent }]}>THIS DEVICE</Text>
+                              </View>
+                            )}
+                          </View>
+                          <Text style={[styles.sessionLocation, { color: textColorSecondary }]} numberOfLines={1}>
+                            {session.osName ? `${session.osName} • ` : ''}
+                            {session.browser || 'CSEC Sentinel'} • {formatLastActive(session.lastActive, isCurrent)}
+                          </Text>
+                        </View>
+
+                        {isCurrent ? (
+                          <View style={[styles.activePill, { backgroundColor: greenAccent + '20' }]}>
+                            <View style={[styles.pulseDot, { backgroundColor: greenAccent }]} />
+                            <Text style={[styles.activePillText, { color: greenAccent }]}>ONLINE</Text>
+                          </View>
+                        ) : (
+                          <TouchableOpacity
+                            style={[styles.revokeBtn, { borderColor: redAccent }]}
+                            onPress={() => handleRevokeSession(session)}
+                            disabled={isRevoking}
+                            activeOpacity={0.7}
+                          >
+                            {isRevoking ? (
+                              <ActivityIndicator size="small" color={redAccent} />
+                            ) : (
+                              <Text style={[styles.revokeBtnText, { color: redAccent }]}>LOG OUT</Text>
+                            )}
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
+
+                {/* Log Out All Other Devices Button */}
+                {sessions.filter(s => !s.isCurrent).length > 0 && (
+                  <TouchableOpacity
+                    style={[styles.revokeAllBtn, { borderColor: redAccent + '40', backgroundColor: redAccent + '10' }]}
+                    onPress={handleRevokeAllOtherSessions}
+                    disabled={isRevokingAll}
+                    activeOpacity={0.7}
+                  >
+                    {isRevokingAll ? (
+                      <ActivityIndicator size="small" color={redAccent} />
+                    ) : (
+                      <>
+                        <Ionicons name="log-out-outline" size={16} color={redAccent} style={{ marginRight: 6 }} />
+                        <Text style={[styles.revokeAllBtnText, { color: redAccent }]}>
+                          LOG OUT ALL OTHER DEVICES ({sessions.filter(s => !s.isCurrent).length})
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
           </View>
 
           {/* --- DANGER ZONE (Delete Account) --- */}
@@ -364,12 +634,25 @@ const styles = StyleSheet.create({
   primaryBtnText: { color: '#FFF', fontSize: 14, fontWeight: 'bold', letterSpacing: 1 },
 
   sessionRow: { flexDirection: 'row', alignItems: 'center' },
-  sessionIconBox: { width: 50, height: 50, borderRadius: 25, backgroundColor: 'rgba(150,150,150,0.1)', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
-  sessionDetails: { flex: 1 },
-  sessionName: { fontSize: 16, fontWeight: 'bold', marginBottom: 2 },
-  sessionLocation: { fontSize: 12 },
-  activePill: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
+  sessionIconBox: { width: 46, height: 46, borderRadius: 23, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  sessionDetails: { flex: 1, marginRight: 8 },
+  sessionName: { fontSize: 15, fontWeight: 'bold', marginBottom: 2 },
+  sessionLocation: { fontSize: 11 },
+  sessionDivider: { height: 1, marginVertical: 12 },
+  cardSubtitle: { fontSize: 11, marginTop: 2 },
+  
+  currentPill: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, marginLeft: 6, alignSelf: 'center' },
+  currentPillText: { fontSize: 8, fontWeight: '800', letterSpacing: 0.5 },
+  
+  pulseDot: { width: 6, height: 6, borderRadius: 3, marginRight: 5 },
+  activePill: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 9, paddingVertical: 5, borderRadius: 12 },
   activePillText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  
+  revokeBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  revokeBtnText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
+
+  revokeAllBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 14, borderWidth: 1, marginTop: 16 },
+  revokeAllBtnText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
 
   dangerText: { fontSize: 14, lineHeight: 22, marginBottom: 20 },
   dangerBtn: { paddingVertical: 16, borderRadius: 20, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(239, 68, 68, 0.3)' },

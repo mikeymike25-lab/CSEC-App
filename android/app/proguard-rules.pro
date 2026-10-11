@@ -12,3 +12,12 @@
 -keep class com.facebook.react.turbomodule.** { *; }
 
 # Add any project specific keep options here:
+
+# React Native Android Widget
+-keep class com.reactnativeandroidwidget.** { *; }
+-keep class com.sad.csec.widget.** { *; }
+
+# Firebase & Google Play Services
+-keepattributes *Annotation*
+-dontwarn com.google.firebase.**
+-keep class com.google.firebase.** { *; }

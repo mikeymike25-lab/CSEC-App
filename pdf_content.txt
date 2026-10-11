@@ -1,0 +1,245 @@
+=== PAGE 1 ===
+TECHNOLOGICAL INSTITUTE OF THE PHILIPPINES
+QUEZON CITY
+COLLEGE OF COMPUTER STUDIES
+IT 009 - Systems Integration and Architecture 1
+GROUP NO. 5(CSEC)
+Name: Date: Sep 17, 2026
+Dela Cruz, Christian Joshua G.
+Garcia, Paul Ryan R.
+Padilla, Apollo Justine F.
+Pili, Russel Jhon O.
+Salamat, Mike Angelo P.
+Program/Section: IT31S3 Instructor: Mr. Allan Burgos
+Assessment Task: Group Activity 4.1 — Stress Testing Plan for Your Project
+Part I.
+Briefly describe your group project, its purpose, target users, and major components.
+Include a simple architecture diagram showing the important parts of the system that may be
+affected by heavy usage.
+Purpose - CSEC: This is a mobile application that provides security to Filipino digital
+wallet users especially those using GCash digital wallet from phishing emails and SMS links.
+The technology behind this software includes a two-tier detection process, fast and static
+whitelisting-blacklisting process running in the mobile device and random forest machine
+learning algorithm running on the backend.The system Detection is done through the analysis
+of the phishing URLs pasted on the application. Once the link is pasted, It first determines if
+the app has scanned it before,since the past results are cached in a centralized database and
+match the pasted link, this avoid reprocessing the same link twice, if that is not the case, the link
+is analyzed by the Random Forest algorithm and categorized as safe or unsafe and it will be
+stored to the centralized database. The main aim is to provide quick detection for the
+user’s account protection.
+Major components:
+● JavaScript
+● TypeScript
+● React Native
+● Python
+● Flask
+● Firebase
+=== PAGE 2 ===
+● Random Forest algorithm
+.
+=== PAGE 4 ===
+Part II
+Identify the normal operating condition of your project. Estimate the usual number of
+users, requests, transactions, uploads, or other activities your system is expected to handle.
+Explain why your estimate is reasonable
+Normal operation scenario. Under normal operation the app is being used by a few
+active users for checking their SMS or links from emails, and where most of the links are
+checked locally and only a few of them are checked through the backend of the Random
+forest algorithm.
+Activity Estimation. Under usual circumstances, the system is supposed to handle
+about 50-100 users checking about 3-5 links a day, which would amount to 150-500 link
+checks a day, and 50-60% of those checks should be performed immediately from the local list
+dataset, while only 30-40% Making it 50-150 link checks that will require Random Forest
+checking on the backend, along with Firebase synchronizations for updating the shared list.
+Explain why your estimate is reasonable. An SMS/Email of 50-100 users with 3-5
+links per day would be more reflective of practical usage at a standard scale. The
+percentage of 50-60% local list used is low due to huge numbers of links existing on the
+Internet and the datasets are still being updated with more links, which is why more links
+would still not be present in that local list datasets and therefore have to be checked using
+Random Forest algorithm.
+Part III.
+Under normal workload conditions during stress testing, users are expected to use
+our AI link checker primarily for links that are new and have not been previously scanned by
+other users. This is made possible by leveraging a centralized database and caching system for
+previously scanned links, featuring a TTL (time-to-live) policy to ensure stale results are
+periodically refreshed alongside an option for forced re-scanning when needed.
+Another critical scenario involves multiple users attempting to scan uncached links
+simultaneously. Because AI analysis takes several seconds per link depending on URL length,
+these concurrent requests can heavily bottleneck our Python Flask backend. Without offloading
+long-running tasks, the influx of HTTPS traffic risks overloading the server and causing
+downtime, making the AI link checker unusable.
+Lastly, our team identified a severe issue during a TTL burst scenario. Because our
+app relies on forced re-scanning once a link's TTL expires, a mass cache expiration occurring
+during peak usage hours forces simultaneous requests to trigger full AI scans. Because our
+Python Flask backend is hosted on Render’s free tier with very low CPU resources, the
+=== PAGE 5 ===
+combination of peak user traffic and a TTL burst severely slows down server processing. This
+sudden wave of concurrent AI scan requests starves our server of worker threads, causing
+request timeouts and ultimately leading to server downtime.
+Part IV.
+The response time for our AI link checker is dynamic, as processing latency scales
+significantly depending on URL length, feature complexity, and the specific decision path
+traversed within our Random Forest machine learning model. During stress testing, tracking
+latency metrics—particularly the 95th and 99th percentiles—allows us to quantify performance
+bottlenecks when concurrent requests process long, complex links during cache misses and
+TTL expiration spikes on our resource-limited Render server infrastructure.
+Another metric to track is Throughput (Requests per Second) under multiple
+concurrent requests. In this scenario, we can identify the processing limits of Render’s free tier
+and pinpoint the maximum acceptable request volume for our users. Again, this performance
+will be dynamic, as it traces back to the dynamic analysis of our links—where key factors
+include URL length, feature complexity, and the specific decision path traversed within our
+Random Forest machine learning model.
+Database and Cache Recovery Time. This metric measures the time required for our
+central database and cache layer to return to normal response times (<5 ms) and healthy
+CPU/IOPS utilization following a sudden traffic spike or TTL burst. Measuring database
+recovery time is critical because prolonged latency or hanging connections following a traffic
+spike directly impacts user retention and damages app reliability. If the database remains
+sluggish long after a burst subsides, subsequent user requests will continue to stall or fail.
+Furthermore, analyzing this recovery metric provides data-driven insights to improve our
+backend resilience, connection pooling, and failover strategies in worst-case overload
+scenarios.
+=== PAGE 6 ===
+Part V.
+To evaluate the operational boundaries and performance bottlenecks of the CSEC
+architecture under heavy traffic, two open-source load-testing frameworks Grafana k6 and
+Locust were evaluated.
+Tool Comparison Matrix
+Criteria Tool 1: Grafana k6 Tool 2: Locust
+Execution Built on Go runtime; executes virtual Built on Python runtime;
+Engine & user scripts compiled via an executes virtual user behavior
+Runtime embedded JavaScript (ES6) engine. using native Python syntax and
+event loops.
+Load Low-overhead CLI execution; Code-driven load distribution;
+Generation supports protocol-level HTTP/REST supports user journey modeling,
+Capabilities testing, custom thresholds, and task set scheduling, and
+stage-based user ramping. web-based runtime modification.
+Primary http_req_duration (P90, P95, P99 Requests Per Second (RPS),
+Performance latency), http_reqs Latency Percentiles (50th, 95th,
+Metrics (Throughput/RPS), http_req_failed 99th), Failure Percentage %,
+(Error Rate), vus (Active Virtual Average Response Time.
+Users).
+System High efficiency; Go concurrency Moderate efficiency; higher
+Resource model allows high virtual user memory footprint per virtual user
+Efficiency density with minimal host CPU and thread due to Python process
+memory footprint. interpreter overhead.
+=== PAGE 7 ===
+Target Native HTTP/HTTPS REST API HTTP/HTTPS REST API testing,
+Integration & testing, raw JSON payload custom socket protocols, and
+Protocols formatting, and headless CI/CD browser event simulation via
+automation pipeline integration. Python libraries.
+License & Open-Source (AGPLv3) free CLI Open-Source (MIT License) free
+Cost Model tool; optional cloud-hosted analytics. tool.
+Architectural High: Ideal for stress-testing REST High: Architecturally compatible
+Suitability APIs with structured JSON payloads with Python-based backends,
+under strict resource limits. though host execution consumes
+more system resources.
+Tool Selection & Justification
+Grafana k6 was selected as the performance testing tool for evaluating the CSEC backend
+system. The selection is justified by the following:
+● Engine Efficiency (Go vs. Java/Python): Grafana k6 is built in Go. Unlike JMeter
+(which consumes heavy system memory by launching a Java thread per virtual user) or
+Locust (which uses Python's slower runtime), k6 uses lightweight goroutines. This allows
+a single laptop to fire thousands of concurrent requests without lagging or bottlenecking
+the client machine.
+● Developer-Friendly Scripting (JavaScript/ES6): k6 scripts are written in plain
+JavaScript/ES6, making test creation fast for developers working with mobile and web
+technologies (like React Native) without needing to configure complex Java XML files in
+a GUI.
+● Code-Level Pass/Fail Thresholds: k6 allows defining explicit code rules directly inside
+the test script (e.g., failing the build if 95% of responses exceed 1,500 ms). This aligns
+directly with the project's goal of catching Render server thread starvation and HTTP 504
+timeouts programmatically.
+● Lightweight CLI and Automation: k6 runs as a single, lightweight command-line binary
+that executes instantly and integrates directly into developer workflows and git
+repositories without installing heavy dependencies.
+=== PAGE 8 ===
+Part VI.
+The group will conduct stress testing using Grafana k6 to evaluate our Python Flask
+backend hosted on Render. The testing methodology will follow standard performance testing
+patterns, specifically:
+1. Baseline Load Testing: Ramping up to a moderate concurrent user load to establish
+normal response times (P95/P99 latency) for both cache hits and AI scan cache misses.
+2. Step-Up Stress Testing: Incrementally increasing the volume of virtual users (VUs) to
+identify the maximum request processing threshold (Requests Per Minute / RPS) before
+server thread starvation and HTTP 504 timeouts occur on Render's free tier.
+3. Spike & TTL Burst Testing: Introducing immediate, high-volume request bursts to
+simulate mass cache invalidations, allowing us to measure error rates, client-side
+fallback behavior, and database/cache recovery time post-surge.
+The results from this stress test will help us identify vulnerabilities, improve backend
+performance, and patch our application to ensure smooth operation. Additionally, it will help the
+development team determine the right time to scale our infrastructure.
+Part VII.
+● Performance Degradation: At moderate loads, response times are supposed to be
+Low and consistent because the server will be able to process cache hits as well as AI
+scan without any problems. But with an Increase in the number of virtual users, Latency
+is expected to increase, with AI scans, caches misses increasing at higher rate compare
+to cached hits
+● Possible Errors: With the increase in the number of requests to the maximum capacity,
+there should be an increase in errors and the queuing of the request. HTTP 504 is
+expected once the server can't keep up with increasing requests to the maximum
+capacity.
+● Failure Behavior: If the backend gets overloaded, it should simply stop serving requests
+if it runs out of resources, otherwise, the app will probably fail or delay the scan result but
+not crash. The spike test should also reveal the ability of the cache/database to cope
+with a large number of misses.
+● Recovery: As soon as traffic returns to its normal state, response times and mistakes
+would be restored automatically, making a server restart unnecessary. The most
+important point during the spike test would be the duration of cache and database
+stabilization, which will indicate whether the system can handle a surge of traffic or
+requires scaling.
+=== PAGE 9 ===
+Part VIII
+● Group Analysis:
+From our planned stress test scenarios, the scenario where we would see our system
+fail would be a TTL burst coupled with high user load. This is because the Flask backend
+is hosted in the free tier of Render with very minimal CPU capacity and the burst of TTL
+will lead to many links being checked via the Random Forest algorithm all at once,
+leading to exhaustion of worker threads on the server. The mode of failure which will
+most affect the users will be request timeouts and slow scan results. The users depend
+on the application to check their GCash account for phishing links. In case of failure, our
+system should gracefully fail by queueing up the requests instead of failing totally. The
+recovery will entail the system responding to requests within the normal period without
+needing a manual server reboot as the recovery time would be indicated by the
+database cache.Prior to deployment, the team needs to concentrate on enhancing the
+backend’s performance when handling simultaneous AI scans for cache miss scenarios,
+by either using task queuing or task offloading. Additionally, it would be wise to upgrade
+the server capacity to accommodate TTL bursts.
+● Dela Cruz, Christian Joshua G.
+Conducting stress testing was a major eye-opener in our development process. I
+realized that a strong machine learning model alone is not enough to guarantee a
+successful project; ML must be paired with a resilient, well-tested infrastructure in a
+controlled environment. Beyond simple response time, stress testing exposed critical
+architectural variables—such as worker thread starvation, error isolation, and database
+recovery—that must not be overlooked when building a production-ready application.
+● Garcia, Paul Ryan R.
+This activity helped me understand that a good system design isn't only about how it
+works under normal conditions, but how well it holds up when a lot of users rely on it at
+once. Knowing that the app depends on two layers of detection made me realize both
+layers need to stay fast and accurate even when requests pile up, or the whole purpose
+of quick protection breaks down. It gave me a better appreciation for why stress testing
+is a normal part of building something people are meant to trust with sensitive accounts
+● Padilla, Apollo Justine F.
+Going through this activity taught me why it's important to first understand what "normal"
+usage looks like before figuring out what happens when that usage spikes. It helped me
+see that not everything is checked the same way, some checks are quick and light, while
+others take more processing, and that difference matters a lot once traffic increases.
+Overall, this made me realize stress testing isn't just about catching bugs, but about
+making sure a system stays dependable for users even when conditions aren't ideal.
+● Pili, Russel Jhon O.
+Considering all the aspects associated with this activity, I have realized that I should give
+additional attention to the reliability of the process, since we now understand how many
+requests will go directly into the Random Forest system without being analyzed locally.
+In other words, an increase in the number of people using our app and pasting links to
+files will create an influx of data, which will have to be processed by the AI algorithm,
+meaning a significant slowing of the process. Moreover, when considering normal usage
+=== PAGE 10 ===
+statistics, it becomes obvious that even an insignificant daily number of requests could
+turn into quite a large amount of work once cache misses begin to accumulate, creating
+504 errors and delays. Therefore, the speed of cache and database recovery plays an
+equally important role in maintaining the system's functionality.
+● Salamat, Mike Angelo P.
+Through this stress testing proposal, I discovered that stress testing is not merely a
+bug-hunting exercise, but a vital benchmarking tool. Evaluating our Python Flask
+backend under simulated load transformed our understanding of system
+capacity—providing empirical data on latency, thread saturation, and recovery times that
+will directly inform our future architectural and scaling decisions.

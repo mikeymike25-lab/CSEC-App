@@ -1,4 +1,5 @@
 import React from 'react';
+import { Platform } from 'react-native';
 import { WidgetTaskHandlerProps, requestWidgetUpdate } from 'react-native-android-widget';
 import { CsecWidget } from './Widget';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -15,11 +16,16 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
 }
 
 export async function updateWidget() {
-  requestWidgetUpdate({
-    widgetName: 'CsecWidget',
-    renderWidget: () => null, // this will trigger the task handler
-    widgetNotFound: () => {
-      // Widget not added to home screen, ignore
-    },
-  });
+  if (Platform.OS !== 'android') return;
+  try {
+    requestWidgetUpdate({
+      widgetName: 'CsecWidget',
+      renderWidget: () => null, // this will trigger the task handler
+      widgetNotFound: () => {
+        // Widget not added to home screen, ignore
+      },
+    });
+  } catch (e) {
+    // Non-android or widget update error
+  }
 }

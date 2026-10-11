@@ -22,9 +22,11 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 
-import { getAuth, sendEmailVerification, signOut, updateProfile } from 'firebase/auth';
+import { getAuth, onAuthStateChanged, sendEmailVerification, signOut, updateProfile } from 'firebase/auth';
 import { addDoc, collection, doc, onSnapshot, setDoc, updateDoc, query, where } from 'firebase/firestore';
-import { auth, db } from '../../firebaseConfig';
+import { ref, uploadString, getDownloadURL } from 'firebase/storage';
+import { auth, db, storage } from '../../firebaseConfig';
+import { terminateCurrentSession } from '../../services/sessionService';
 
 // --- THEME CONTEXT ---
 import { useTheme } from '../../context/ThemeContext';
@@ -97,126 +99,148 @@ export default function ProfileScreen() {
   const warningAccent = '#F59E0B'; 
   const adminAccent = '#4DA8DA'; 
 
-  // --- 1. REAL-TIME DATA FETCH ---
+  // --- 1. REAL-TIME DATA FETCH & USER LISTENERS ---
   useEffect(() => {
-    const user = auth.currentUser;
-    if (!user) return;
+    let unsubUser: (() => void) | null = null;
+    let unsubReports: (() => void) | null = null;
 
-    setAccountId(`CS-${user.uid.substring(0, 4).toUpperCase()}`);
-    user.reload().then(() => setIsEmailVerified(user.emailVerified));
+    const unsubAuth = onAuthStateChanged(auth, async (user) => {
+      // Clean up previous listeners if user changes
+      if (unsubUser) { unsubUser(); unsubUser = null; }
+      if (unsubReports) { unsubReports(); unsubReports = null; }
 
-    const unsubUser = onSnapshot(doc(db, 'users', user.uid), async (docSnap) => {
-      const randomDesignation = `Agent-${Math.floor(1000 + Math.random() * 9000)}`;
+      if (!user) {
+        setAccountId('N/A');
+        setUserData({ name: 'Guest', email: 'Not authenticated', accountStatus: 'active' });
+        return;
+      }
 
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        const newStatus = data.accountStatus || 'active';
+      // Fast synchronous population from Auth cache so UI never stays stuck on 'Connecting...'
+      setAccountId(`CS-${user.uid.substring(0, 4).toUpperCase()}`);
+      setIsEmailVerified(user.emailVerified);
+      setUserData(prev => ({
+        ...prev,
+        name: user.displayName || prev.name,
+        email: user.email || prev.email,
+      }));
+      if (user.photoURL) {
+        setProfileImage(user.photoURL);
+      }
 
-        setUserData(prev => {
-          if (prev.accountStatus === 'active' && newStatus !== 'active') {
-            if (newStatus === 'suspended') {
-              setStatusModalDetails({ title: 'Account Suspended', message: 'Your scanning privileges have been temporarily suspended by a System Administrator.', color: warningAccent });
-            } else if (newStatus === 'banned') {
-              setStatusModalDetails({ title: 'Account Banned', message: 'Your account has been permanently restricted due to a violation of protocols.', color: redAccent });
+      user.reload().then(() => setIsEmailVerified(user.emailVerified)).catch(() => {});
+
+      // Real-time Firestore user doc listener
+      unsubUser = onSnapshot(doc(db, 'users', user.uid), async (docSnap) => {
+        const randomDesignation = `Agent-${Math.floor(1000 + Math.random() * 9000)}`;
+
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          const newStatus = data.accountStatus || 'active';
+
+          setUserData(prev => {
+            if (prev.accountStatus === 'active' && newStatus !== 'active') {
+              if (newStatus === 'suspended') {
+                setStatusModalDetails({ title: 'Account Suspended', message: 'Your scanning privileges have been temporarily suspended by a System Administrator.', color: warningAccent });
+              } else if (newStatus === 'banned') {
+                setStatusModalDetails({ title: 'Account Banned', message: 'Your account has been permanently restricted due to a violation of protocols.', color: redAccent });
+              }
+              setIsStatusModalVisible(true);
             }
-            setIsStatusModalVisible(true);
+
+            return {
+              name: data.name || user.displayName || randomDesignation,
+              email: data.email || user.email || 'N/A',
+              accountStatus: newStatus
+            };
+          });
+
+          if (data.profileImage) setProfileImage(data.profileImage);
+          else if (user.photoURL) setProfileImage(user.photoURL);
+
+          try {
+            const tokenResult = await user.getIdTokenResult();
+            const hasAdminClaim = tokenResult.claims.admin === true;
+            const hasAdminRole = data.role === 'admin';
+            setIsAdmin(hasAdminClaim || hasAdminRole);
+          } catch (e) {
+            console.warn("Could not retrieve custom claims:", e);
+            setIsAdmin(data.role === 'admin');
           }
 
-          return {
-            name: data.name || user.displayName || randomDesignation,
-            email: data.email || user.email || 'N/A',
-            accountStatus: newStatus
-          };
-        });
+        } else {
+          await setDoc(doc(db, 'users', user.uid), {
+            uid: user.uid,
+            name: user.displayName || randomDesignation,
+            email: user.email,
+            createdAt: new Date(),
+            role: 'user',
+            accountStatus: 'active',
+            profileImage: user.photoURL || null
+          });
+        }
+      }, (error) => {
+        console.warn("Profile Status Listen Error:", error.code);
+      });
 
-        if (data.profileImage) setProfileImage(data.profileImage);
-        else if (user.photoURL) setProfileImage(user.photoURL);
-
-        if (data.role === 'admin') setIsAdmin(true);
-
-      } else {
-        await setDoc(doc(db, 'users', user.uid), {
-          uid: user.uid,
-          name: user.displayName || randomDesignation,
-          email: user.email,
-          createdAt: new Date(),
-          role: 'user',
-          accountStatus: 'active',
-          profileImage: user.photoURL || null
-        });
-      }
-    }, (error) => {
-      console.warn("Profile Status Listen Error:", error.code);
-    });
-
-    return () => unsubUser();
-  }, []);
-
-  // --- 2. REAL-TIME USER REPORTS LISTENER (UPGRADED PUSH NOTIFS) ---
-  useEffect(() => {
-    const user = auth.currentUser;
-    if (!user) return;
-
-    const q = query(collection(db, 'reports'), where('uid', '==', user.uid));
-    const unsubReports = onSnapshot(q, async (snapshot) => {
-      
-      // Watch for status changes to trigger a live notification
-      for (const change of snapshot.docChanges()) {
-        if (change.type === 'modified') {
-          const data = change.doc.data();
-          
-          if (data.status === 'read') {
-            // Prevent spam by checking local storage for this specific report ID
-            const alertedKey = `notified_report_${change.doc.id}`;
-            const alreadyAlerted = await AsyncStorage.getItem(alertedKey);
+      // Real-time reports listener
+      const q = query(collection(db, 'reports'), where('uid', '==', user.uid));
+      unsubReports = onSnapshot(q, async (snapshot) => {
+        for (const change of snapshot.docChanges()) {
+          if (change.type === 'modified') {
+            const data = change.doc.data();
             
-            if (!alreadyAlerted) {
-              await AsyncStorage.setItem(alertedKey, 'true');
+            if (data.status === 'read') {
+              const alertedKey = `notified_report_${change.doc.id}`;
+              const alreadyAlerted = await AsyncStorage.getItem(alertedKey);
               
-              // Fetch user's local notification preferences
-              const storedPrefs = await AsyncStorage.getItem('csec_notification_prefs');
-              const prefs = storedPrefs ? JSON.parse(storedPrefs) : null;
-              
-              // Only trigger if Master Push is ON and Report Updates are ON
-              if (prefs && prefs.masterPushEnabled && prefs.reportUpdatesEnabled) {
-                await Notifications.scheduleNotificationAsync({
-                  content: {
-                    title: "Report Reviewed 🛡️",
-                    body: "The System Admin has reviewed your recent feedback. Thank you!",
-                    sound: true,
-                  },
-                  trigger: null, // Send instantly
-                });
-              } else {
-                // Fallback to in-app alert if push is disabled
-                Alert.alert(
-                  "Report Reviewed", 
-                  "The System Admin has reviewed your recent feedback. Thank you for helping keep Sentinel secure!"
-                );
+              if (!alreadyAlerted) {
+                await AsyncStorage.setItem(alertedKey, 'true');
+                
+                const storedPrefs = await AsyncStorage.getItem('csec_notification_prefs');
+                const prefs = storedPrefs ? JSON.parse(storedPrefs) : null;
+                
+                if (prefs && prefs.masterPushEnabled && prefs.reportUpdatesEnabled) {
+                  await Notifications.scheduleNotificationAsync({
+                    content: {
+                      title: "Report Reviewed 🛡️",
+                      body: "The System Admin has reviewed your recent feedback. Thank you!",
+                      sound: true,
+                    },
+                    trigger: null,
+                  });
+                } else {
+                  Alert.alert(
+                    "Report Reviewed", 
+                    "The System Admin has reviewed your recent feedback. Thank you for helping keep Sentinel secure!"
+                  );
+                }
               }
             }
           }
         }
-      }
 
-      const fetchedReports: any[] = [];
-      snapshot.forEach((doc) => {
-        fetchedReports.push({ id: doc.id, ...doc.data() });
+        const fetchedReports: any[] = [];
+        snapshot.forEach((doc) => {
+          fetchedReports.push({ id: doc.id, ...doc.data() });
+        });
+        
+        fetchedReports.sort((a, b) => {
+          const timeA = a.createdAt?.seconds || 0;
+          const timeB = b.createdAt?.seconds || 0;
+          return timeB - timeA;
+        });
+        
+        setUserReports(fetchedReports);
+      }, (error) => {
+        console.warn("Profile Reports Listen Error:", error.code);
       });
-      
-      // Sort newest first locally
-      fetchedReports.sort((a, b) => {
-        const timeA = a.createdAt?.seconds || 0;
-        const timeB = b.createdAt?.seconds || 0;
-        return timeB - timeA;
-      });
-      
-      setUserReports(fetchedReports);
-    }, (error) => {
-      console.warn("Profile Reports Listen Error:", error.code);
     });
 
-    return () => unsubReports();
+    return () => {
+      if (unsubUser) unsubUser();
+      if (unsubReports) unsubReports();
+      unsubAuth();
+    };
   }, []);
 
   // --- 3. REAL-TIME AI ENGINE MONITORING ---
@@ -330,25 +354,96 @@ export default function ProfileScreen() {
   };
 
   const pickEditImage = async () => {
-    if (Platform.OS !== 'web') {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Required', 'C-SEC needs access to your gallery.');
-        return;
+    try {
+      if (Platform.OS !== 'web') {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission Required', 'C-SEC needs access to your gallery.');
+          return;
+        }
+      }
+
+      let result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true, 
+        aspect: [1, 1], 
+        quality: 0.3, 
+        base64: true, 
+      });
+
+      if (!result.canceled && result.assets && result.assets[0]) {
+        const asset = result.assets[0];
+        setEditImageUri(asset.uri); 
+
+        if (asset.base64) {
+          setEditImageBase64(asset.base64);
+        } else if (asset.uri) {
+          // On Web, if base64 is omitted from launchImageLibraryAsync, fetch the blob and convert
+          try {
+            const response = await fetch(asset.uri);
+            const blob = await response.blob();
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const resString = reader.result as string;
+              const cleanBase64 = resString.includes(',') ? resString.split(',')[1] : resString;
+              setEditImageBase64(cleanBase64);
+            };
+            reader.readAsDataURL(blob);
+          } catch (blobErr) {
+            console.warn("Could not convert blob to base64:", blobErr);
+          }
+        }
+      }
+    } catch (pickerErr) {
+      console.warn("Image picker error:", pickerErr);
+    }
+  };
+
+  const uploadAvatarImage = async (base64Data: string, userId: string): Promise<string> => {
+    const cloudName = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME || 'm1jqcmay';
+    const uploadPreset = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET || 'Csec_profiles';
+
+    // 1. Try Cloudinary first (direct, high-speed CDN)
+    if (cloudName && uploadPreset) {
+      try {
+        const cloudinaryUrl = `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`;
+        const formData = new FormData();
+        const formattedBase64 = base64Data.startsWith('data:') 
+          ? base64Data 
+          : `data:image/jpeg;base64,${base64Data}`;
+        formData.append('file', formattedBase64);
+        formData.append('upload_preset', uploadPreset);
+
+        const response = await fetch(cloudinaryUrl, {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await response.json();
+        if (data.secure_url) {
+          return data.secure_url;
+        }
+      } catch (cloudErr) {
+        console.warn("[Profile] Cloudinary upload fallback:", cloudErr);
       }
     }
 
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true, 
-      aspect: [1, 1], 
-      quality: 0.2, 
-      base64: true, 
-    });
+    // 2. Fallback to Firebase Storage with a strict 4-second timeout to prevent infinite hanging
+    try {
+      const storagePromise = (async () => {
+        const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+        const imageRef = ref(storage, `users/${userId}/profile_${Date.now()}.jpg`);
+        await uploadString(imageRef, cleanBase64, 'base64', { contentType: 'image/jpeg' });
+        return await getDownloadURL(imageRef);
+      })();
 
-    if (!result.canceled && result.assets[0].base64) {
-      setEditImageUri(result.assets[0].uri); 
-      setEditImageBase64(result.assets[0].base64); 
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Storage upload timed out.")), 4000)
+      );
+
+      return await Promise.race([storagePromise, timeoutPromise]);
+    } catch (storageErr) {
+      console.warn("[Profile] Firebase Storage upload failed/timed out:", storageErr);
+      throw new Error("Unable to upload image. Please check your network connection.");
     }
   };
 
@@ -366,26 +461,7 @@ export default function ProfileScreen() {
 
     try {
       if (editImageBase64) {
-        // Upload image to Cloudinary
-        const CLOUDINARY_URL = 'https://api.cloudinary.com/v1_1/m1jqcmay/image/upload';
-        const formData = new FormData();
-        
-        // Cloudinary requires the base64 string to have the data URI prefix
-        formData.append('file', `data:image/jpeg;base64,${editImageBase64}`);
-        formData.append('upload_preset', 'Csec_profiles');
-
-        const response = await fetch(CLOUDINARY_URL, {
-          method: 'POST',
-          body: formData,
-        });
-        
-        const data = await response.json();
-        
-        if (data.secure_url) {
-          finalPhotoURL = data.secure_url;
-        } else {
-          throw new Error(data.error?.message || "Cloudinary upload failed");
-        }
+        finalPhotoURL = await uploadAvatarImage(editImageBase64, user.uid);
       }
 
       await updateProfile(user, { 
@@ -398,14 +474,14 @@ export default function ProfileScreen() {
         profileImage: finalPhotoURL 
       });
 
-      setUserData({ ...userData, name: editName });
+      setUserData(prev => ({ ...prev, name: editName }));
       if (finalPhotoURL) setProfileImage(finalPhotoURL);
       
       setIsEditModalVisible(false);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Save Profile Error:", error);
-      Alert.alert("Error", "Failed to update profile. Please try again.");
+      Alert.alert("Error", error.message || "Failed to update profile. Please try again.");
     } finally {
       setIsSavingProfile(false);
     }
@@ -882,6 +958,9 @@ export default function ProfileScreen() {
               onPress={async () => {
                 try {
                   const auth = getAuth();
+                  if (auth.currentUser) {
+                    await terminateCurrentSession(auth.currentUser.uid);
+                  }
                   await signOut(auth);
                   setLogoutModalVisible(false);
                   router.replace('/'); 

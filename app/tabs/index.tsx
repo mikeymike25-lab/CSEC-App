@@ -6,8 +6,9 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 // --- FIREBASE IMPORTS ---
+import { onAuthStateChanged } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { auth, db } from '../../firebaseConfig'; // <-- Added auth here
+import { auth, db } from '../../firebaseConfig';
 
 // --- TUNE INTO THE RADIO TOWER ---
 import { useTheme } from '../../context/ThemeContext';
@@ -56,11 +57,12 @@ export default function DashboardScreen() {
 
   // Fetch user's first name on load
   useEffect(() => {
-    const user = auth.currentUser;
-    if (user?.displayName) {
-      // Split the full name by space and take the first word
-      setUserName(user.displayName.split(' ')[0]); 
-    }
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user?.displayName) {
+        setUserName(user.displayName.split(' ')[0]); 
+      }
+    });
+    return () => unsub();
   }, []);
 
   // 1. Fetch data from AsyncStorage whenever the Dashboard becomes active

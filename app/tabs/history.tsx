@@ -46,7 +46,15 @@ export default function HistoryScreen() {
       const storedData = await AsyncStorage.getItem('csec_history');
       if (storedData) {
         const parsed = JSON.parse(storedData);
-        setHistoryData(parsed);
+        // Automatically sanitize any accidental local development URLs
+        const sanitized = parsed.filter((item: any) => 
+          !item.url?.toLowerCase().includes('localhost') && 
+          !item.url?.toLowerCase().includes('127.0.0.1')
+        );
+        if (sanitized.length !== parsed.length) {
+          await AsyncStorage.setItem('csec_history', JSON.stringify(sanitized));
+        }
+        setHistoryData(sanitized);
       }
     } catch (error) {
       console.error("Failed to load history:", error);
@@ -275,5 +283,6 @@ const styles = StyleSheet.create({
   summaryTitle: { fontSize: 16, fontWeight: '700', marginBottom: 4 },
   summaryValue: { fontSize: 48, fontWeight: '800', marginBottom: 16, letterSpacing: -1 },
   summaryFooter: { flexDirection: 'row', alignItems: 'center' },
+  summaryFooterText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
   redDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444', marginRight: 8 },
 });

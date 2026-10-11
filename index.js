@@ -1,9 +1,16 @@
 import { registerRootComponent } from 'expo';
 import { ExpoRoot } from 'expo-router';
-import { registerWidgetTaskHandler } from 'react-native-android-widget';
-import { widgetTaskHandler } from './widget/WidgetTaskHandler';
+import { Platform } from 'react-native';
 
-registerWidgetTaskHandler(widgetTaskHandler);
+if (Platform.OS === 'android') {
+  try {
+    const { registerWidgetTaskHandler } = require('react-native-android-widget');
+    const { widgetTaskHandler } = require('./widget/WidgetTaskHandler');
+    registerWidgetTaskHandler(widgetTaskHandler);
+  } catch (error) {
+    console.warn('Failed to register Android widget task handler:', error);
+  }
+}
 
 export function App() {
   const ctx = require.context('./app');

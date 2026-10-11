@@ -1,15 +1,16 @@
-import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, initializeFirestore } from "firebase/firestore";
+import { initializeApp, getApps, getApp, FirebaseApp } from "firebase/app";
+import { getFirestore, initializeFirestore, Firestore } from "firebase/firestore";
 // 1. Updated Auth imports for React Native
 import { 
   getAuth, 
   initializeAuth, 
-  getReactNativePersistence, 
-  browserLocalPersistence 
+  Auth 
 } from "firebase/auth";
+// @ts-ignore - getReactNativePersistence is provided by React Native bundle of firebase/auth
+import { getReactNativePersistence } from "firebase/auth";
 // 2. Import AsyncStorage
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getStorage } from "firebase/storage";
+import { getStorage, FirebaseStorage } from "firebase/storage";
 import { Platform } from "react-native";
 
 const firebaseConfig = {
@@ -22,7 +23,7 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase (HMR Safe)
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 try {
   if (Platform.OS === 'web') {
@@ -33,10 +34,10 @@ try {
 }
 
 // Export services to use them in your screens
-export const db = getFirestore(app);
+export const db: Firestore = getFirestore(app);
 
 // 3. Initialize Auth WITH AsyncStorage persistence for Mobile, and default for Web
-let auth;
+let auth: Auth;
 try {
   auth = Platform.OS === 'web' 
     ? getAuth(app) 
@@ -48,4 +49,4 @@ try {
 }
 export { auth };
 
-export const storage = getStorage(app);
+export const storage: FirebaseStorage = getStorage(app);

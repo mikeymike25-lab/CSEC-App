@@ -4,8 +4,8 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 // --- FIREBASE IMPORTS ---
-// ADDED: query and orderBy to sort reports newest-first
-import { collection, doc, getDoc, getDocs, onSnapshot, orderBy, query, setDoc, updateDoc } from 'firebase/firestore';
+// ADDED: query and orderBy to sort reports newest-first, arrayUnion for threat intel overrides
+import { arrayUnion, collection, doc, getDoc, getDocs, onSnapshot, orderBy, query, setDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../firebaseConfig';
 
 // --- THEME CONTEXT ---
@@ -33,6 +33,7 @@ export default function AdminScreen() {
 
   // --- NEW FEATURE STATES ---
   const [threatUrl, setThreatUrl] = useState('');
+  const [threatCounts, setThreatCounts] = useState({ whitelist: 0, blacklist: 0 });
   const [broadcastMessage, setBroadcastMessage] = useState('');
   const [auditLogs, setAuditLogs] = useState<string[]>([
     `[${new Date().toLocaleTimeString('en-US', { hour12: false })}] SYSTEM: Secure connection established.`,
@@ -71,12 +72,34 @@ export default function AdminScreen() {
   useEffect(() => {
     const verifyAdmin = async () => {
       if (!auth.currentUser) return router.replace('/');
-      const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
-      if (!userDoc.exists() || userDoc.data().role !== 'admin') {
-        Alert.alert("Access Denied", "You do not have clearance for this sector.");
+      try {
+        // Cryptographically verify administrative clearance via Firebase Custom User Claims OR Firestore role
+        const tokenResult = await auth.currentUser.getIdTokenResult(true);
+        let isAuthorizedAdmin = tokenResult.claims.admin === true;
+
+        if (!isAuthorizedAdmin) {
+          try {
+            const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
+            if (userDoc.exists() && userDoc.data()?.role === 'admin') {
+              isAuthorizedAdmin = true;
+            }
+          } catch (docErr) {
+            console.warn("Admin Firestore role fallback check notice:", docErr);
+          }
+        }
+
+        if (!isAuthorizedAdmin) {
+          Alert.alert("Access Denied", "You do not have clearance for this sector.");
+          router.replace('/tabs/profile' as any);
+          return;
+        }
+      } catch (err) {
+        console.error("Admin verification error:", err);
+        Alert.alert("Authentication Error", "Unable to verify security clearance status.");
         router.replace('/tabs/profile' as any);
         return;
       }
+
       setIsAuthorized(true);
       setIsLoading(false);
       fetchUsers(); 
@@ -100,7 +123,16 @@ export default function AdminScreen() {
         }
     });
 
-    return () => { unsub(); unsubStats(); };
+    const unsubThreat = onSnapshot(doc(db, 'system', 'threat_intel'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const wl = Array.isArray(data?.whitelist) ? data.whitelist.length : 0;
+        const bl = Array.isArray(data?.blacklist) ? data.blacklist.length : 0;
+        setThreatCounts({ whitelist: wl, blacklist: bl });
+      }
+    });
+
+    return () => { unsub(); unsubStats(); unsubThreat(); };
   }, []);
 
   const logAction = (message: string) => {
@@ -140,11 +172,30 @@ export default function AdminScreen() {
     }
   };
 
-  const handleThreatIntel = (type: 'whitelist' | 'blacklist') => {
-    if (!threatUrl.trim()) return;
-    Alert.alert("Matrix Updated", `${threatUrl} has been added to the global ${type}.`);
-    logAction(`Added ${threatUrl} to Global ${type.toUpperCase()}`);
-    setThreatUrl('');
+  const handleThreatIntel = async (type: 'whitelist' | 'blacklist') => {
+    const cleanTarget = threatUrl.trim().toLowerCase();
+    if (!cleanTarget) {
+      Alert.alert("Input Required", "Please enter a valid domain or URL to override.");
+      return;
+    }
+
+    try {
+      await setDoc(doc(db, 'system', 'threat_intel'), {
+        [type]: arrayUnion(cleanTarget),
+        updatedAt: new Date().toISOString(),
+        lastUpdatedBy: auth.currentUser?.email || adminId
+      }, { merge: true });
+
+      Alert.alert(
+        "Matrix Updated & Persisted",
+        `Target "${cleanTarget}" has been saved to the global ${type}. All mobile scanners will apply this override immediately.`
+      );
+      logAction(`Persisted ${cleanTarget} to Global ${type.toUpperCase()}`);
+      setThreatUrl('');
+    } catch (error: any) {
+      console.error("Threat Intel Update Failed:", error);
+      Alert.alert("Update Failed", "Could not persist threat intelligence override to Firestore.");
+    }
   };
 
   // --- FETCH USERS ---
@@ -270,7 +321,22 @@ export default function AdminScreen() {
               <MaterialCommunityIcons name="shield-half-full" size={20} color={primaryAccent} />
               <Text style={[styles.cardTitle, { color: textColorPrimary }]}>Threat Intelligence Matrix</Text>
             </View>
-            <Text style={[styles.toggleSubtitle, { color: textColorSecondary, marginBottom: 15 }]}>Manually override AI classification for specific domains.</Text>
+            <Text style={[styles.toggleSubtitle, { color: textColorSecondary, marginBottom: 12 }]}>Manually override AI classification for specific domains.</Text>
+            
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16, gap: 10 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)', paddingVertical: 4, paddingHorizontal: 10, borderRadius: 12, borderWidth: 1, borderColor: successAccent + '40' }}>
+                <Feather name="shield" size={12} color={successAccent} style={{ marginRight: 5 }} />
+                <Text style={{ color: successAccent, fontSize: 11, fontWeight: '700' }}>
+                  {threatCounts.whitelist} Whitelisted
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : 'rgba(239, 68, 68, 0.1)', paddingVertical: 4, paddingHorizontal: 10, borderRadius: 12, borderWidth: 1, borderColor: dangerAccent + '40' }}>
+                <Feather name="alert-triangle" size={12} color={dangerAccent} style={{ marginRight: 5 }} />
+                <Text style={{ color: dangerAccent, fontSize: 11, fontWeight: '700' }}>
+                  {threatCounts.blacklist} Blacklisted
+                </Text>
+              </View>
+            </View>
             
             <TextInput 
               style={[styles.inputBox, { backgroundColor: inputBgColor, color: textColorPrimary }]} 

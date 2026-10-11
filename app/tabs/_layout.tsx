@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // --- FIREBASE IMPORTS ---
 import { doc, getDoc, onSnapshot } from 'firebase/firestore'; 
-import { signOut } from 'firebase/auth'; 
+import { onAuthStateChanged, signOut } from 'firebase/auth'; 
 import { auth, db } from '../../firebaseConfig';
 
 // --- IMPORT THE THEME TOWER ---
@@ -99,21 +99,28 @@ export default function TabLayout() {
 
   // 1. Initial Check for Admin Tabs
   useEffect(() => {
-    const checkAdminStatus = async () => {
-      const user = auth.currentUser;
+    const unsub = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
-          const userDoc = await getDoc(doc(db, 'users', user.uid));
-          if (userDoc.exists() && userDoc.data().role === 'admin') {
-            setIsAdmin(true);
+          const tokenResult = await user.getIdTokenResult();
+          let isUserAdmin = tokenResult.claims.admin === true;
+          if (!isUserAdmin) {
+            const userSnap = await getDoc(doc(db, 'users', user.uid));
+            if (userSnap.exists() && userSnap.data()?.role === 'admin') {
+              isUserAdmin = true;
+            }
           }
+          setIsAdmin(isUserAdmin);
         } catch (error) {
-          console.error("Layout Role Check Error:", error);
+          console.error("Layout Admin Claims Check Error:", error);
+          setIsAdmin(false);
         }
+      } else {
+        setIsAdmin(false);
       }
       setIsCheckingRole(false);
-    };
-    checkAdminStatus();
+    });
+    return () => unsub();
   }, []);
 
   // --- 2. GLOBAL DIRECTIVE: MAINTENANCE LOCKDOWN LISTENER ---
@@ -126,11 +133,17 @@ export default function TabLayout() {
           const user = auth.currentUser;
           if (user) {
             try {
-              // Always verify against the DB to ensure they haven't bypassed React state
-              const userDoc = await getDoc(doc(db, 'users', user.uid));
-              const role = userDoc.exists() ? userDoc.data().role : 'user';
+              // Always verify cryptographically signed claims or Firestore admin role
+              const tokenResult = await user.getIdTokenResult();
+              let isUserAdmin = tokenResult.claims.admin === true;
+              if (!isUserAdmin) {
+                const userSnap = await getDoc(doc(db, 'users', user.uid));
+                if (userSnap.exists() && userSnap.data()?.role === 'admin') {
+                  isUserAdmin = true;
+                }
+              }
               
-              if (role !== 'admin') {
+              if (!isUserAdmin) {
                 // If they are not an admin, instantly log them out and kick them to the login screen
                 Alert.alert(
                   "SYSTEM LOCKDOWN",
