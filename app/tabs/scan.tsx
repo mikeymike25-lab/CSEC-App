@@ -5,6 +5,7 @@ import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  DeviceEventEmitter,
   Modal,
   Platform,
   ScrollView,
@@ -155,6 +156,20 @@ export default function ScanScreen() {
       const filteredHistory = history.filter((item: any) => item.url?.toLowerCase() !== url.toLowerCase());
       const updatedHistory = [newEntry, ...filteredHistory];
       await AsyncStorage.setItem('csec_history', JSON.stringify(updatedHistory));
+      
+      // Notify active screens (Dashboard / Home) to refresh instantly
+      DeviceEventEmitter.emit('CSEC_SCAN_COMPLETED');
+
+      // Update home screen widget on Android
+      if (Platform.OS === 'android') {
+        try {
+          const { updateWidget } = require('../../widget/WidgetTaskHandler');
+          updateWidget();
+        } catch (widgetErr) {
+          console.warn("Widget update skipped:", widgetErr);
+        }
+      }
+
       console.log(`Scan ${formattedId} saved to history successfully!`);
     } catch (e) {
       console.error("Failed to save history:", e);

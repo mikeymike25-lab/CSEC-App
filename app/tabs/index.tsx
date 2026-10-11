@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications'; 
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react'; 
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { DeviceEventEmitter, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 // --- FIREBASE IMPORTS ---
 import { onAuthStateChanged } from 'firebase/auth';
@@ -65,26 +65,40 @@ export default function DashboardScreen() {
     return () => unsub();
   }, []);
 
-  // 1. Fetch data from AsyncStorage whenever the Dashboard becomes active
+  // 1. Fetch data from AsyncStorage whenever the Dashboard becomes active or scan finishes
+  const loadRecentData = useCallback(async () => {
+    try {
+      const storedData = await AsyncStorage.getItem('csec_history');
+      if (storedData) {
+        const history = JSON.parse(storedData);
+        setTotalScans(history.length);
+        if (history.length > 0) {
+          setRecentScan(history[0]); // Grab the newest scan at the top of the list
+        } else {
+          setRecentScan(null);
+        }
+      } else {
+        setTotalScans(0);
+        setRecentScan(null);
+      }
+    } catch (error) {
+      console.error("Failed to load dashboard data:", error);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
-      const loadRecentData = async () => {
-        try {
-          const storedData = await AsyncStorage.getItem('csec_history');
-          if (storedData) {
-            const history = JSON.parse(storedData);
-            setTotalScans(history.length);
-            if (history.length > 0) {
-              setRecentScan(history[0]); // Grab the newest scan at the top of the list
-            }
-          }
-        } catch (error) {
-          console.error("Failed to load dashboard data:", error);
-        }
-      };
       loadRecentData();
-    }, [])
+    }, [loadRecentData])
   );
+
+  // Instant refresh whenever a scan finishes anywhere in the app
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('CSEC_SCAN_COMPLETED', () => {
+      loadRecentData();
+    });
+    return () => sub.remove();
+  }, [loadRecentData]);
 
   // 2. Real-time listener for the Global Broadcast + Push Notifications
   useEffect(() => {

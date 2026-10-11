@@ -1,17 +1,20 @@
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useLocalSearchParams, router } from 'expo-router';
 import {
+  ActivityIndicator,
   Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View
 } from 'react-native';
 import { useTheme } from '../../context/ThemeContext';
+import { submitThreatReport } from '../../services/threatIntelService';
 
 import HistoryModal, { HistoryItem } from '../../components/HistoryModal';
 
@@ -21,6 +24,67 @@ export default function HistoryScreen() {
   const [selectedItem, setSelectedItem] = useState<HistoryItem | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Reporting State
+  const [isReportModalVisible, setIsReportModalVisible] = useState(false);
+  const [reportTarget, setReportTarget] = useState<HistoryItem | null>(null);
+  const [reportReason, setReportReason] = useState('Suspected Phishing');
+  const [reportNotes, setReportNotes] = useState('');
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const [feedbackModal, setFeedbackModal] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error';
+    reportCount?: number;
+  } | null>(null);
+
+  const reportReasons = [
+    { id: 'Suspected Phishing', label: 'Suspected Phishing / Fake Portal' },
+    { id: 'Malicious Redirect', label: 'Malicious / Deceptive Redirect' },
+    { id: 'False Positive', label: 'False Positive (Safe Link Flagged)' },
+    { id: 'Malware / Exploit', label: 'Malware Download / Exploit' },
+    { id: 'Other Suspicious Activity', label: 'Other Security Threat' }
+  ];
+
+  const handleOpenReport = (item: HistoryItem) => {
+    // If opened from HistoryModal, close it first
+    setIsModalVisible(false);
+    setReportTarget(item);
+    setReportReason(item.verdict === 'Safe' ? 'False Positive' : 'Suspected Phishing');
+    setReportNotes('');
+    setIsReportModalVisible(true);
+  };
+
+  const handleSubmitReport = async () => {
+    if (!reportTarget?.url) return;
+    setIsSubmittingReport(true);
+    try {
+      const res = await submitThreatReport(
+        reportTarget.url,
+        reportReason,
+        reportTarget.verdict || 'Unknown',
+        reportNotes.trim()
+      );
+      setIsReportModalVisible(false);
+      setFeedbackModal({
+        visible: true,
+        title: 'Report Transmitted',
+        message: res.message,
+        type: 'success',
+        reportCount: res.reportCount
+      });
+    } catch (e: any) {
+      setFeedbackModal({
+        visible: true,
+        title: 'Submission Failed',
+        message: e?.message || 'Unable to submit report. Please check your connection.',
+        type: 'error'
+      });
+    } finally {
+      setIsSubmittingReport(false);
+    }
+  };
 
   const params = useLocalSearchParams();
   const openModalId = params.openModalId as string;
@@ -186,8 +250,18 @@ export default function HistoryScreen() {
                   </Text>
                 </View>
 
-                <View style={styles.viewDetailsIcon}>
-                  <Feather name="chevron-right" size={20} color={textColorSecondary} />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <TouchableOpacity 
+                    style={[styles.rowReportBtn, { backgroundColor: isDark ? '#233240' : '#F1F5F9' }]} 
+                    onPress={() => handleOpenReport(item)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="flag-outline" size={15} color={item.verdict === 'Phishing' ? redAccent : textColorSecondary} />
+                  </TouchableOpacity>
+
+                  <View style={styles.viewDetailsIcon}>
+                    <Feather name="chevron-right" size={20} color={textColorSecondary} />
+                  </View>
                 </View>
               </TouchableOpacity>
             ))}
@@ -240,7 +314,145 @@ export default function HistoryScreen() {
         visible={isModalVisible}
         onClose={handleCloseModal}
         selectedItem={selectedItem}
+        onReport={handleOpenReport}
       />
+
+      {/* --- IN-APP THREAT REPORT MODAL FOR HISTORY --- */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={isReportModalVisible}
+        onRequestClose={() => setIsReportModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.reportCard, { backgroundColor: cardColor, borderColor: dividerColor }]}>
+            <View style={styles.reportHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <View style={styles.reportBadgeIcon}>
+                  <Ionicons name="flag" size={18} color="#EF4444" />
+                </View>
+                <View>
+                  <Text style={[styles.reportTitle, { color: textColorPrimary }]}>Report Link to C-SEC</Text>
+                  <Text style={[styles.reportSub, { color: textColorSecondary }]}>Threat Intelligence Triage</Text>
+                </View>
+              </View>
+              <TouchableOpacity onPress={() => setIsReportModalVisible(false)} style={styles.closeBtn}>
+                <Ionicons name="close" size={20} color={textColorSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 360 }}>
+              <View style={[styles.urlBox, { backgroundColor: isDark ? '#121A21' : '#F1F5F9' }]}>
+                <Text style={[styles.urlBoxLabel, { color: textColorSecondary }]}>HISTORY TARGET URL</Text>
+                <Text style={[styles.urlBoxText, { color: isDark ? '#38BDF8' : '#0284C7' }]} numberOfLines={2}>
+                  {reportTarget?.url}
+                </Text>
+              </View>
+
+              <Text style={[styles.sectionHeader, { color: textColorSecondary }]}>SELECT REASON</Text>
+              {reportReasons.map((opt) => (
+                <TouchableOpacity
+                  key={opt.id}
+                  style={[
+                    styles.reasonOption,
+                    { backgroundColor: isDark ? '#121A21' : '#F8FAFC' },
+                    reportReason === opt.id && { borderColor: isDark ? '#38BDF8' : '#0284C7', backgroundColor: isDark ? 'rgba(56, 189, 248, 0.1)' : '#E0F2FE' }
+                  ]}
+                  onPress={() => setReportReason(opt.id)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[
+                    styles.radioCircle,
+                    { borderColor: reportReason === opt.id ? (isDark ? '#38BDF8' : '#0284C7') : textColorSecondary }
+                  ]}>
+                    {reportReason === opt.id && <View style={[styles.radioDot, { backgroundColor: isDark ? '#38BDF8' : '#0284C7' }]} />}
+                  </View>
+                  <Text style={[
+                    styles.reasonText,
+                    { color: reportReason === opt.id ? textColorPrimary : textColorSecondary },
+                    reportReason === opt.id && { fontWeight: '700' }
+                  ]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+
+              <Text style={[styles.sectionHeader, { marginTop: 14, color: textColorSecondary }]}>ADDITIONAL CONTEXT (OPTIONAL)</Text>
+              <TextInput
+                style={[styles.notesInput, { backgroundColor: isDark ? '#121A21' : '#F8FAFC', color: textColorPrimary }]}
+                placeholder="Describe details (e.g., impersonates bank, stolen credential form)..."
+                placeholderTextColor={textColorSecondary}
+                value={reportNotes}
+                onChangeText={setReportNotes}
+                multiline
+                numberOfLines={3}
+              />
+            </ScrollView>
+
+            <View style={styles.reportActionRow}>
+              <TouchableOpacity
+                style={[styles.cancelBtn, { backgroundColor: isDark ? '#233240' : '#E2E8F0' }]}
+                onPress={() => setIsReportModalVisible(false)}
+                disabled={isSubmittingReport}
+              >
+                <Text style={[styles.cancelBtnText, { color: textColorSecondary }]}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.submitBtn}
+                onPress={handleSubmitReport}
+                disabled={isSubmittingReport}
+              >
+                {isSubmittingReport ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="shield-checkmark" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.submitBtnText}>Submit Report</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* --- IN-APP FEEDBACK MODAL (NO ALERT) --- */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={!!feedbackModal?.visible}
+        onRequestClose={() => setFeedbackModal(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.feedbackCard, { backgroundColor: cardColor }]}>
+            <View style={[
+              styles.feedbackIconCircle,
+              { backgroundColor: feedbackModal?.type === 'success' ? '#DCFCE7' : '#FEE2E2' }
+            ]}>
+              <Ionicons
+                name={feedbackModal?.type === 'success' ? 'checkmark-circle' : 'alert-circle'}
+                size={34}
+                color={feedbackModal?.type === 'success' ? '#16A34A' : '#DC2626'}
+              />
+            </View>
+            <Text style={[styles.feedbackTitle, { color: textColorPrimary }]}>{feedbackModal?.title}</Text>
+            <Text style={[styles.feedbackMessage, { color: textColorSecondary }]}>{feedbackModal?.message}</Text>
+            {feedbackModal?.reportCount && feedbackModal.reportCount > 1 ? (
+              <View style={styles.escalationPill}>
+                <Ionicons name="flame" size={14} color="#EA580C" />
+                <Text style={styles.escalationText}>Priority Boosted: Reported {feedbackModal.reportCount} times</Text>
+              </View>
+            ) : null}
+            <TouchableOpacity
+              style={styles.feedbackOkBtn}
+              onPress={() => setFeedbackModal(null)}
+            >
+              <Text style={styles.feedbackOkBtnText}>Understood</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -285,4 +497,201 @@ const styles = StyleSheet.create({
   summaryFooter: { flexDirection: 'row', alignItems: 'center' },
   summaryFooterText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
   redDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444', marginRight: 8 },
+
+  rowReportBtn: {
+    padding: 7,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  reportCard: {
+    width: '100%',
+    maxWidth: 440,
+    borderRadius: 28,
+    padding: 22,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  reportHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  reportBadgeIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  reportTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  reportSub: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  closeBtn: {
+    padding: 6,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  urlBox: {
+    padding: 12,
+    borderRadius: 14,
+    marginBottom: 14,
+  },
+  urlBoxLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  urlBoxText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  sectionHeader: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  reasonOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 14,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  radioCircle: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  radioDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  reasonText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  notesInput: {
+    borderRadius: 14,
+    padding: 12,
+    fontSize: 13,
+    minHeight: 70,
+    textAlignVertical: 'top',
+  },
+  reportActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 18,
+  },
+  cancelBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 18,
+    alignItems: 'center',
+  },
+  cancelBtnText: {
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  submitBtn: {
+    flex: 1.6,
+    flexDirection: 'row',
+    paddingVertical: 14,
+    borderRadius: 18,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  submitBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 13,
+  },
+  feedbackCard: {
+    width: '90%',
+    maxWidth: 360,
+    borderRadius: 28,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  feedbackIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  feedbackTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  feedbackMessage: {
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  escalationPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFEDD5',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    marginBottom: 16,
+    gap: 5,
+  },
+  escalationText: {
+    color: '#C2410C',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  feedbackOkBtn: {
+    width: '100%',
+    paddingVertical: 14,
+    borderRadius: 18,
+    backgroundColor: '#38BDF8',
+    alignItems: 'center',
+  },
+  feedbackOkBtnText: {
+    color: '#0F172A',
+    fontWeight: '800',
+    fontSize: 14,
+  },
 });

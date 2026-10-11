@@ -26,9 +26,10 @@ interface HistoryModalProps {
   visible: boolean;
   onClose: () => void;
   selectedItem: HistoryItem | null;
+  onReport?: (item: HistoryItem) => void;
 }
 
-export default function HistoryModal({ visible, onClose, selectedItem }: HistoryModalProps) {
+export default function HistoryModal({ visible, onClose, selectedItem, onReport }: HistoryModalProps) {
   const { isDark } = useTheme();
 
   const cardColor = isDark ? '#1A242E' : '#FFFFFF';
@@ -171,6 +172,22 @@ export default function HistoryModal({ visible, onClose, selectedItem }: History
               </View>
             </ScrollView>
           )}
+
+          {selectedItem && onReport && (
+            <TouchableOpacity
+              style={[
+                styles.reportButton,
+                { backgroundColor: selectedItem.verdict === 'Phishing' ? '#EF4444' : (selectedItem.verdict === 'Suspicious' ? '#F59E0B' : '#0284C7') }
+              ]}
+              onPress={() => onReport(selectedItem)}
+              activeOpacity={0.8}
+            >
+              <Feather name="flag" size={16} color="#FFF" style={{ marginRight: 8 }} />
+              <Text style={styles.reportButtonText}>
+                {selectedItem.verdict === 'Safe' ? 'Report False Negative' : 'Report This Link'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </Modal>
@@ -178,6 +195,25 @@ export default function HistoryModal({ visible, onClose, selectedItem }: History
 }
 
 const styles = StyleSheet.create({
+  reportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 16,
+    marginTop: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  reportButtonText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.6)', 

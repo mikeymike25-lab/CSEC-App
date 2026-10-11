@@ -15,9 +15,10 @@ interface FlagProps {
   onProceed: () => void;
   onClose: () => void;
   onViewDetails: () => void;
+  onReport?: () => void;
 }
 
-export const FlagContent: React.FC<FlagProps> = ({ type, url, isCached, protocol, summary, technicalDetails, sentinelAnalysis, onProceed, onClose, onViewDetails }) => {
+export const FlagContent: React.FC<FlagProps> = ({ type, url, isCached, protocol, summary, technicalDetails, sentinelAnalysis, onProceed, onClose, onViewDetails, onReport }) => {
   const isDarkMode = useColorScheme() === 'dark';
 
   const theme = {
@@ -187,6 +188,11 @@ export const FlagContent: React.FC<FlagProps> = ({ type, url, isCached, protocol
             <TouchableOpacity style={[styles.secondaryBtn, { backgroundColor: theme.secondaryBtnBg }]} onPress={onViewDetails}>
               <Text style={[styles.secondaryBtnText, { color: theme.secondaryBtnText }]}>VIEW IN CSEC APP</Text>
             </TouchableOpacity>
+            {onReport && (
+              <TouchableOpacity style={styles.tertiaryBtn} onPress={onReport}>
+                <Text style={[styles.tertiaryBtnText, { color: '#EF4444' }]}>REPORT FALSE VERDICT</Text>
+              </TouchableOpacity>
+            )}
             <View style={styles.footerRow}>
               <Ionicons name="shield-checkmark-outline" size={12} color={theme.tertiaryText} />
               <Text style={[styles.footerText, { color: theme.tertiaryText }]}>Verified by Digital Vault Security Cloud</Text>
@@ -196,6 +202,12 @@ export const FlagContent: React.FC<FlagProps> = ({ type, url, isCached, protocol
 
         {type === 'warning' && (
           <>
+            {onReport && (
+              <TouchableOpacity style={[styles.reportBtn, { backgroundColor: '#F59E0B' }]} onPress={onReport}>
+                <Ionicons name="flag" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.primaryBtnText}>REPORT SUSPICIOUS LINK</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.primaryBtn} onPress={onViewDetails}>
               <Text style={styles.primaryBtnText}>CHECK DETAILS IN CSEC</Text>
             </TouchableOpacity>
@@ -210,11 +222,17 @@ export const FlagContent: React.FC<FlagProps> = ({ type, url, isCached, protocol
 
         {type === 'danger' && (
           <>
+            {onReport && (
+              <TouchableOpacity style={[styles.reportBtn, { backgroundColor: '#EF4444' }]} onPress={onReport}>
+                <Ionicons name="flag" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.primaryBtnText}>REPORT THREAT LINK</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.primaryBtn} onPress={onViewDetails}>
               <Text style={styles.primaryBtnText}>FULL REPORT IN CSEC</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.tertiaryBtn} onPress={onClose}>
-              <Text style={[styles.tertiaryBtnText, { color: theme.tertiaryText }]}>CLOSE</Text>
+              <Text style={[styles.tertiaryBtnText, { color: theme.tertiaryText }]}>CLOSE & DISMISS</Text>
             </TouchableOpacity>
           </>
         )}
@@ -239,6 +257,7 @@ const styles = StyleSheet.create({
   dangerVerdictLabelText: { color: '#FFFFFF', fontSize: 10, fontWeight: 'bold', letterSpacing: 0.5, textTransform: 'uppercase' },
   verdictDesc: { fontSize: 14, lineHeight: 22 },
   buttonContainer: { width: '100%', gap: 12 },
+  reportBtn: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 14, borderRadius: 24, width: '100%', shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 3 },
   primaryBtn: { backgroundColor: '#2A3B4C', paddingVertical: 16, borderRadius: 24, alignItems: 'center', width: '100%' },
   primaryBtnText: { color: '#FFFFFF', fontWeight: '700', fontSize: 14, letterSpacing: 0.5 },
   secondaryBtn: { paddingVertical: 16, borderRadius: 24, alignItems: 'center', width: '100%' },

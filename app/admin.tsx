@@ -45,6 +45,8 @@ export default function AdminScreen() {
   const [threatCounts, setThreatCounts] = useState({ whitelist: 0, blacklist: 0 });
   const [threatLists, setThreatLists] = useState<{ whitelist: string[]; blacklist: string[] }>({ whitelist: [], blacklist: [] });
   const [broadcastMessage, setBroadcastMessage] = useState('');
+  const [activeBroadcastText, setActiveBroadcastText] = useState('');
+  const [adminFeedback, setAdminFeedback] = useState<{ title: string; message: string; type: 'success' | 'error' } | null>(null);
   const [auditLogs, setAuditLogs] = useState<string[]>([
     `[${new Date().toLocaleTimeString('en-US', { hour12: false })}] SYSTEM: Secure connection established.`,
     `[${new Date().toLocaleTimeString('en-US', { hour12: false })}] SYSTEM: Awaiting command directives.`
@@ -159,6 +161,7 @@ export default function AdminScreen() {
         setStrictScanning(data.strictScanning ?? true);
         setAllowNewSignups(data.allowNewSignups ?? true);
         if (data.aiServerUrl) setAiServerUrl(data.aiServerUrl);
+        setActiveBroadcastText(data.activeBroadcast || '');
       }
     });
 
@@ -222,20 +225,49 @@ export default function AdminScreen() {
     logAction(`Rerouted AI Engine to ${aiServerUrl}`);
   };
 
-  // UPDATED: Now saves both the broadcast message and the current timestamp
+  // Saves both the broadcast message and the current timestamp
   const handleSendBroadcast = async () => {
     if (!broadcastMessage.trim()) return;
     try {
       await setDoc(doc(db, 'system', 'config'), {
-        activeBroadcast: broadcastMessage,
+        activeBroadcast: broadcastMessage.trim(),
         updatedAt: new Date().toISOString()
       }, { merge: true });
       
-      Alert.alert("Broadcast Transmitted", "Message sent to all active agents.");
-      logAction(`Sent Global Broadcast: "${broadcastMessage}"`);
+      logAction(`Sent Global Broadcast: "${broadcastMessage.trim()}"`);
       setBroadcastMessage('');
-    } catch (error) {
-      Alert.alert("Transmission Failed", "Could not sync broadcast configuration.");
+      setAdminFeedback({
+        title: "Broadcast Transmitted",
+        message: "Your announcement is now live across all agent devices.",
+        type: "success"
+      });
+    } catch (error: any) {
+      setAdminFeedback({
+        title: "Transmission Failed",
+        message: error?.message || "Could not sync broadcast configuration.",
+        type: "error"
+      });
+    }
+  };
+
+  const handleClearBroadcast = async () => {
+    try {
+      await setDoc(doc(db, 'system', 'config'), {
+        activeBroadcast: '',
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+      logAction(`Cleared Global Broadcast`);
+      setAdminFeedback({
+        title: "Broadcast Cleared",
+        message: "The global announcement has been taken off the air.",
+        type: "success"
+      });
+    } catch (error: any) {
+      setAdminFeedback({
+        title: "Action Failed",
+        message: error?.message || "Could not clear active broadcast.",
+        type: "error"
+      });
     }
   };
 
@@ -813,16 +845,54 @@ export default function AdminScreen() {
               <Ionicons name="megaphone" size={20} color={warningAccent} />
               <Text style={[styles.cardTitle, { color: textColorPrimary }]}>Global Broadcast</Text>
             </View>
+
+            {activeBroadcastText ? (
+              <View style={[
+                styles.activeBroadcastContainer, 
+                { 
+                  backgroundColor: isDark ? 'rgba(245, 158, 11, 0.12)' : '#FEF3C7', 
+                  borderColor: isDark ? 'rgba(245, 158, 11, 0.3)' : '#FDE68A' 
+                }
+              ]}>
+                <View style={styles.activeBroadcastHeader}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <View style={[styles.liveDot, { backgroundColor: warningAccent }]} />
+                    <Text style={[styles.liveTitle, { color: warningAccent }]}>LIVE ON AIR</Text>
+                  </View>
+                  <TouchableOpacity 
+                    onPress={handleClearBroadcast}
+                    style={[styles.endBroadcastBtn, { backgroundColor: isDark ? '#233240' : '#FFFFFF' }]}
+                    activeOpacity={0.7}
+                  >
+                    <Feather name="x" size={13} color={dangerAccent} />
+                    <Text style={[styles.endBroadcastText, { color: dangerAccent }]}>End</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={[styles.activeBroadcastText, { color: textColorPrimary }]}>
+                  {activeBroadcastText}
+                </Text>
+              </View>
+            ) : null}
+
             <TextInput 
-              style={[styles.inputBox, { backgroundColor: inputBgColor, color: textColorPrimary, minHeight: 80, paddingTop: 15 }]} 
+              style={[
+                styles.broadcastInput, 
+                { backgroundColor: inputBgColor, color: textColorPrimary }
+              ]} 
               placeholder="Enter emergency broadcast message..." 
               placeholderTextColor={textColorSecondary}
               value={broadcastMessage}
               onChangeText={setBroadcastMessage}
               multiline
+              numberOfLines={3}
             />
-            <TouchableOpacity style={[styles.primaryButton, { backgroundColor: warningAccent, marginTop: 10 }]} onPress={handleSendBroadcast}>
-              <Feather name="send" size={20} color="#FFF" />
+
+            <TouchableOpacity 
+              style={[styles.broadcastButton, { backgroundColor: warningAccent }]} 
+              onPress={handleSendBroadcast}
+              activeOpacity={0.8}
+            >
+              <Feather name="send" size={18} color="#FFF" />
               <Text style={styles.primaryButtonText}>Transmit to All Agents</Text>
             </TouchableOpacity>
           </View>
@@ -1623,6 +1693,32 @@ export default function AdminScreen() {
             </View>
           </View>
         </Modal>
+        {/* --- IN-APP ADMIN ACTION FEEDBACK MODAL --- */}
+        <Modal visible={!!adminFeedback} animationType="fade" transparent={true}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+            <View style={{ backgroundColor: cardColor, width: '90%', maxWidth: 360, borderRadius: 28, padding: 24, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.3, shadowRadius: 20, elevation: 10 }}>
+              <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: adminFeedback?.type === 'success' ? '#DCFCE7' : '#FEE2E2', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+                <Ionicons
+                  name={adminFeedback?.type === 'success' ? 'checkmark-circle' : 'alert-circle'}
+                  size={32}
+                  color={adminFeedback?.type === 'success' ? '#16A34A' : '#DC2626'}
+                />
+              </View>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: textColorPrimary, marginBottom: 8, textAlign: 'center' }}>
+                {adminFeedback?.title}
+              </Text>
+              <Text style={{ fontSize: 13, color: textColorSecondary, lineHeight: 18, textAlign: 'center', marginBottom: 20 }}>
+                {adminFeedback?.message}
+              </Text>
+              <TouchableOpacity
+                style={{ width: '100%', paddingVertical: 14, borderRadius: 18, backgroundColor: isDark ? '#38BDF8' : '#0284C7', alignItems: 'center' }}
+                onPress={() => setAdminFeedback(null)}
+              >
+                <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14 }}>Dismiss</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       </View>
     </SafeAreaView>
   );
@@ -1689,5 +1785,63 @@ const styles = StyleSheet.create({
   actionLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 10 },
   actionGrid: { flexDirection: 'row', justifyContent: 'space-between' },
   actionBtn: { flex: 1, paddingVertical: 10, borderWidth: 1.5, borderRadius: 12, alignItems: 'center', marginHorizontal: 4 },
-  actionBtnText: { fontSize: 12, fontWeight: 'bold' }
+  actionBtnText: { fontSize: 12, fontWeight: 'bold' },
+
+  activeBroadcastContainer: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 16,
+  },
+  activeBroadcastHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  liveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  liveTitle: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  endBroadcastBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    gap: 3,
+  },
+  endBroadcastText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  activeBroadcastText: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '500',
+  },
+  broadcastInput: {
+    minHeight: 85,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 14,
+    fontWeight: '500',
+    textAlignVertical: 'top',
+    marginBottom: 14,
+  },
+  broadcastButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    borderRadius: 16,
+    width: '100%',
+  },
 });

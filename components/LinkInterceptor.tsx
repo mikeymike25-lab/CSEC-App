@@ -1,10 +1,25 @@
+import React, { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import React, { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
-import { Alert, Linking, Modal, Platform, StyleSheet, View } from 'react-native';
+import { 
+  Alert, 
+  ActivityIndicator, 
+  DeviceEventEmitter, 
+  Linking, 
+  Modal, 
+  Platform, 
+  ScrollView, 
+  StyleSheet, 
+  Text, 
+  TextInput, 
+  TouchableOpacity, 
+  View 
+} from 'react-native';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import { getAuth } from 'firebase/auth'; 
 import { FlagContent, FlagType } from './FlagModals';
 import * as WebBrowser from 'expo-web-browser';
+import { submitThreatReport } from '../services/threatIntelService';
 
 const API_URL = 'https://csec-sentinel-api.onrender.com/analyze-link';
 
@@ -23,6 +38,58 @@ const LinkInterceptor = forwardRef<LinkInterceptorRef, {}>((props, ref) => {
   const [technicalDetails, setTechnicalDetails] = useState('');
   const [sentinelAnalysis, setSentinelAnalysis] = useState('');
   
+  const [isReportModalVisible, setIsReportModalVisible] = useState(false);
+  const [reportReason, setReportReason] = useState('Suspected Phishing');
+  const [reportNotes, setReportNotes] = useState('');
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const [feedbackModal, setFeedbackModal] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error';
+    reportCount?: number;
+  } | null>(null);
+
+  const reportReasons = [
+    { id: 'Suspected Phishing', label: 'Suspected Phishing / Fake Portal' },
+    { id: 'Malicious Redirect', label: 'Malicious / Deceptive Redirect' },
+    { id: 'False Positive', label: 'False Positive (Safe Link Flagged)' },
+    { id: 'Malware / Exploit', label: 'Malware Download / Exploit' },
+    { id: 'Other Suspicious Activity', label: 'Other Security Threat' }
+  ];
+
+  const handleOpenReport = () => {
+    setReportReason(type === 'safe' ? 'False Positive' : 'Suspected Phishing');
+    setReportNotes('');
+    setIsReportModalVisible(true);
+  };
+
+  const handleSubmitReport = async () => {
+    if (!url.trim()) return;
+    setIsSubmittingReport(true);
+    try {
+      const initialVerdict = type === 'danger' ? 'Phishing' : (type === 'warning' ? 'Suspicious' : 'Safe');
+      const res = await submitThreatReport(url.trim(), reportReason, initialVerdict, reportNotes.trim());
+      setIsReportModalVisible(false);
+      setFeedbackModal({
+        visible: true,
+        title: 'Report Transmitted',
+        message: res.message,
+        type: 'success',
+        reportCount: res.reportCount
+      });
+    } catch (e: any) {
+      setFeedbackModal({
+        visible: true,
+        title: 'Submission Failed',
+        message: e?.message || 'Unable to submit report. Please check your network connection.',
+        type: 'error'
+      });
+    } finally {
+      setIsSubmittingReport(false);
+    }
+  };
+
   const router = useRouter();
 
   useImperativeHandle(ref, () => ({
@@ -307,6 +374,9 @@ const LinkInterceptor = forwardRef<LinkInterceptorRef, {}>((props, ref) => {
       const updatedHistory = [historyItem, ...filteredHistory]; 
       await AsyncStorage.setItem('csec_history', JSON.stringify(updatedHistory));
       
+      // Notify active screens (like Home) that a scan finished
+      DeviceEventEmitter.emit('CSEC_SCAN_COMPLETED');
+
       // Update home screen widget (Android only)
       if (Platform.OS === 'android') {
         try {
@@ -323,46 +393,182 @@ const LinkInterceptor = forwardRef<LinkInterceptorRef, {}>((props, ref) => {
   };
 
   return (
-    <Modal
-      animationType="fade"
-      transparent={true}
-      visible={visible}
-      onRequestClose={() => setVisible(false)}
-    >
-      <View style={styles.overlay}>
-        <FlagContent 
-          type={type}
-          url={url}
-          isCached={isCached}   // Pass down cache status
-          protocol={protocol}   // Pass down protocol
-          summary={summary}     // Pass down summary
-          technicalDetails={technicalDetails} // Pass down technical details
-          sentinelAnalysis={sentinelAnalysis} // Pass down sentinel analysis
-          onProceed={async () => {
-            setVisible(false);
-            const target = (url || '').trim();
-            if (!target.startsWith('http://') && !target.startsWith('https://')) {
-              Alert.alert(
-                "Untrusted Protocol",
-                "For your security, C-SEC Sentinel only permits opening verified HTTP and HTTPS web links."
-              );
-              return;
-            }
-            try {
-              await WebBrowser.openBrowserAsync(target);
-            } catch (err) {
-              console.error("[LinkInterceptor] Failed to open browser:", err);
-              Alert.alert("Browser Error", "Unable to launch the external web browser.");
-            }
-          }}
-          onClose={() => setVisible(false)}
-          onViewDetails={() => {
-            setVisible(false);
-            router.push('/tabs'); 
-          }}
-        />
-      </View>
-    </Modal>
+    <>
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={visible}
+        onRequestClose={() => setVisible(false)}
+      >
+        <View style={styles.overlay}>
+          <FlagContent 
+            type={type}
+            url={url}
+            isCached={isCached}   // Pass down cache status
+            protocol={protocol}   // Pass down protocol
+            summary={summary}     // Pass down summary
+            technicalDetails={technicalDetails} // Pass down technical details
+            sentinelAnalysis={sentinelAnalysis} // Pass down sentinel analysis
+            onReport={handleOpenReport}
+            onProceed={async () => {
+              setVisible(false);
+              const target = (url || '').trim();
+              if (!target.startsWith('http://') && !target.startsWith('https://')) {
+                Alert.alert(
+                  "Untrusted Protocol",
+                  "For your security, C-SEC Sentinel only permits opening verified HTTP and HTTPS web links."
+                );
+                return;
+              }
+              try {
+                await WebBrowser.openBrowserAsync(target);
+              } catch (err) {
+                console.error("[LinkInterceptor] Failed to open browser:", err);
+                Alert.alert("Browser Error", "Unable to launch the external web browser.");
+              }
+            }}
+            onClose={() => setVisible(false)}
+            onViewDetails={() => {
+              setVisible(false);
+              router.push('/tabs'); 
+            }}
+          />
+        </View>
+      </Modal>
+
+      {/* --- IN-APP THREAT REPORT MODAL FOR INTERCEPTOR --- */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={isReportModalVisible}
+        onRequestClose={() => setIsReportModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.reportCard}>
+            <View style={styles.reportHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <View style={styles.reportBadgeIcon}>
+                  <Ionicons name="flag" size={18} color="#EF4444" />
+                </View>
+                <View>
+                  <Text style={styles.reportTitle}>Report Link to C-SEC</Text>
+                  <Text style={styles.reportSub}>Threat Intelligence Triage</Text>
+                </View>
+              </View>
+              <TouchableOpacity onPress={() => setIsReportModalVisible(false)} style={styles.closeBtn}>
+                <Ionicons name="close" size={20} color="#94A3B8" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 360 }}>
+              <View style={styles.urlBox}>
+                <Text style={styles.urlBoxLabel}>TARGET URL</Text>
+                <Text style={styles.urlBoxText} numberOfLines={2}>{url}</Text>
+              </View>
+
+              <Text style={styles.sectionHeader}>SELECT REASON</Text>
+              {reportReasons.map((opt) => (
+                <TouchableOpacity
+                  key={opt.id}
+                  style={[
+                    styles.reasonOption,
+                    reportReason === opt.id && styles.reasonOptionActive
+                  ]}
+                  onPress={() => setReportReason(opt.id)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[
+                    styles.radioCircle,
+                    reportReason === opt.id && styles.radioCircleActive
+                  ]}>
+                    {reportReason === opt.id && <View style={styles.radioDot} />}
+                  </View>
+                  <Text style={[
+                    styles.reasonText,
+                    reportReason === opt.id && styles.reasonTextActive
+                  ]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+
+              <Text style={[styles.sectionHeader, { marginTop: 14 }]}>ADDITIONAL CONTEXT (OPTIONAL)</Text>
+              <TextInput
+                style={styles.notesInput}
+                placeholder="Describe details (e.g., impersonates bank, stolen credential form)..."
+                placeholderTextColor="#94A3B8"
+                value={reportNotes}
+                onChangeText={setReportNotes}
+                multiline
+                numberOfLines={3}
+              />
+            </ScrollView>
+
+            <View style={styles.reportActionRow}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setIsReportModalVisible(false)}
+                disabled={isSubmittingReport}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.submitBtn}
+                onPress={handleSubmitReport}
+                disabled={isSubmittingReport}
+              >
+                {isSubmittingReport ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="shield-checkmark" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.submitBtnText}>Submit Report</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* --- IN-APP FEEDBACK MODAL (NO ALERT) --- */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={!!feedbackModal?.visible}
+        onRequestClose={() => setFeedbackModal(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.feedbackCard}>
+            <View style={[
+              styles.feedbackIconCircle,
+              { backgroundColor: feedbackModal?.type === 'success' ? '#DCFCE7' : '#FEE2E2' }
+            ]}>
+              <Ionicons
+                name={feedbackModal?.type === 'success' ? 'checkmark-circle' : 'alert-circle'}
+                size={34}
+                color={feedbackModal?.type === 'success' ? '#16A34A' : '#DC2626'}
+              />
+            </View>
+            <Text style={styles.feedbackTitle}>{feedbackModal?.title}</Text>
+            <Text style={styles.feedbackMessage}>{feedbackModal?.message}</Text>
+            {feedbackModal?.reportCount && feedbackModal.reportCount > 1 ? (
+              <View style={styles.escalationPill}>
+                <Ionicons name="flame" size={14} color="#EA580C" />
+                <Text style={styles.escalationText}>Priority Boosted: Reported {feedbackModal.reportCount} times</Text>
+              </View>
+            ) : null}
+            <TouchableOpacity
+              style={styles.feedbackOkBtn}
+              onPress={() => setFeedbackModal(null)}
+            >
+              <Text style={styles.feedbackOkBtnText}>Understood</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </>
   );
 });
 
@@ -370,6 +576,38 @@ LinkInterceptor.displayName = 'LinkInterceptor';
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.75)', justifyContent: 'center', alignItems: 'center' },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.75)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  reportCard: { backgroundColor: '#1E293B', width: '100%', maxWidth: 440, borderRadius: 28, padding: 22, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.3, shadowRadius: 20, elevation: 10 },
+  reportHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  reportBadgeIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(239, 68, 68, 0.15)', justifyContent: 'center', alignItems: 'center', marginRight: 10 },
+  reportTitle: { fontSize: 17, fontWeight: '800', color: '#F8FAFC' },
+  reportSub: { fontSize: 11, color: '#94A3B8', fontWeight: '500' },
+  closeBtn: { padding: 6, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.08)' },
+  urlBox: { backgroundColor: '#0F172A', padding: 12, borderRadius: 14, marginBottom: 14 },
+  urlBoxLabel: { fontSize: 10, fontWeight: '800', color: '#64748B', letterSpacing: 0.5, marginBottom: 4 },
+  urlBoxText: { fontSize: 13, color: '#38BDF8', fontWeight: '600' },
+  sectionHeader: { fontSize: 11, fontWeight: '800', color: '#94A3B8', letterSpacing: 0.5, marginBottom: 8 },
+  reasonOption: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 14, backgroundColor: '#0F172A', marginBottom: 8, borderWidth: 1, borderColor: 'transparent' },
+  reasonOptionActive: { borderColor: '#38BDF8', backgroundColor: 'rgba(56, 189, 248, 0.1)' },
+  radioCircle: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: '#64748B', justifyContent: 'center', alignItems: 'center', marginRight: 10 },
+  radioCircleActive: { borderColor: '#38BDF8' },
+  radioDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#38BDF8' },
+  reasonText: { fontSize: 13, color: '#94A3B8', fontWeight: '600' },
+  reasonTextActive: { color: '#F8FAFC', fontWeight: '700' },
+  notesInput: { backgroundColor: '#0F172A', borderRadius: 14, padding: 12, color: '#F8FAFC', fontSize: 13, minHeight: 70, textAlignVertical: 'top' },
+  reportActionRow: { flexDirection: 'row', gap: 10, marginTop: 18 },
+  cancelBtn: { flex: 1, paddingVertical: 14, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center' },
+  cancelBtnText: { color: '#94A3B8', fontWeight: '700', fontSize: 13 },
+  submitBtn: { flex: 1.6, flexDirection: 'row', paddingVertical: 14, borderRadius: 18, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center' },
+  submitBtnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 13 },
+  feedbackCard: { backgroundColor: '#1E293B', width: '90%', maxWidth: 360, borderRadius: 28, padding: 24, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.3, shadowRadius: 20, elevation: 10 },
+  feedbackIconCircle: { width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
+  feedbackTitle: { fontSize: 18, fontWeight: '800', color: '#F8FAFC', marginBottom: 8, textAlign: 'center' },
+  feedbackMessage: { fontSize: 13, color: '#94A3B8', lineHeight: 18, textAlign: 'center', marginBottom: 16 },
+  escalationPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFEDD5', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, marginBottom: 16, gap: 5 },
+  escalationText: { color: '#C2410C', fontSize: 11, fontWeight: '700' },
+  feedbackOkBtn: { width: '100%', paddingVertical: 14, borderRadius: 18, backgroundColor: '#38BDF8', alignItems: 'center' },
+  feedbackOkBtnText: { color: '#0F172A', fontWeight: '800', fontSize: 14 }
 });
 
 export default LinkInterceptor;

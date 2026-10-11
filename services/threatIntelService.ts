@@ -184,6 +184,8 @@ export async function submitLinkForTriage(
   };
 }
 
+export const submitThreatReport = submitLinkForTriage;
+
 /**
  * DATABASE 1 PIPELINE:
  * Admin / Researcher forces a link as Safe or Phishing.
