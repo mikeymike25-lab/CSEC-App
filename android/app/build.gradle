@@ -123,6 +123,8 @@ android {
             // or gradle properties. If not specified, builds an unsigned release binary.
             if (project.hasProperty('RELEASE_STORE_FILE') || System.getenv('RELEASE_STORE_FILE') != null) {
                 signingConfig signingConfigs.release
+            } else {
+                signingConfig signingConfigs.debug
             }
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'true'
             shrinkResources enableShrinkResources.toBoolean()

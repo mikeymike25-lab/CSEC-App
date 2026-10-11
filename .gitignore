@@ -10,6 +10,8 @@ build/
 dist/
 wheels/
 *.egg-info
+*.apk
+*.aab
 .venv/
 backend/.venv/
 .tld_cache/
@@ -29,6 +31,9 @@ expo-env.d.ts
 expo_output.txt
 desktop.ini
 .DS_Store
+local.properties
+android/local.properties
+.cxx/
 
 # Keystores & Signing Certificates (Never commit release signing credentials)
 *.jks
