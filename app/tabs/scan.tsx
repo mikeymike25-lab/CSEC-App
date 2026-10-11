@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -18,6 +19,7 @@ import {
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db, auth } from '../../firebaseConfig';
+import { submitLinkForTriage } from '../../services/threatIntelService';
 
 import { useTheme } from '../../context/ThemeContext';
 
@@ -36,6 +38,12 @@ export default function ScanScreen() {
   const [protocol, setProtocol] = useState(''); 
   const [sentinelAnalysis, setSentinelAnalysis] = useState('');
   const [isCached, setIsCached] = useState(false);
+
+  // --- 3-DATABASE PIPELINE: REPORT LINK STATES ---
+  const [isReportLinkModalVisible, setIsReportLinkModalVisible] = useState(false);
+  const [reportReason, setReportReason] = useState('Suspected Phishing');
+  const [reportNotes, setReportNotes] = useState('');
+  const [isSubmittingLinkReport, setIsSubmittingLinkReport] = useState(false);
 
   // --- MODAL & SECURITY STATES ---
   const [isVerificationModalVisible, setIsVerificationModalVisible] = useState(false);
@@ -204,7 +212,16 @@ export default function ScanScreen() {
 
           const strippedHost = cleanUrl.toLowerCase().replace(/^(?:https?:\/\/)?(?:www\.)?/i, '').split('/')[0];
 
-          if (dynamicBlacklist.some(b => cleanUrl.toLowerCase().includes(b.toLowerCase()) || strippedHost === b.toLowerCase())) {
+          // Flexible matcher: exact domain, subdomain (*.domain.com), or URL path substring
+          const isThreatMatch = (rule: string) => {
+            const r = (rule || '').toLowerCase().trim();
+            if (!r) return false;
+            return strippedHost === r || 
+                   strippedHost.endsWith('.' + r) || 
+                   cleanUrl.toLowerCase().includes(r);
+          };
+
+          if (dynamicBlacklist.some(isThreatMatch)) {
             const verdict = 'Phishing';
             const protocol = 'Global Blacklist (Threat Intel)';
             const summary = 'This URL has been flagged as a confirmed threat by C-SEC Security Intelligence.';
@@ -227,7 +244,7 @@ export default function ScanScreen() {
             return;
           }
 
-          if (dynamicWhitelist.some(w => cleanUrl.toLowerCase().includes(w.toLowerCase()) || strippedHost === w.toLowerCase())) {
+          if (dynamicWhitelist.some(isThreatMatch)) {
             const verdict = 'Safe';
             const protocol = 'Platform Whitelist (Threat Intel)';
             const summary = 'This URL is verified safe by C-SEC Security Intelligence override.';
@@ -376,6 +393,33 @@ export default function ScanScreen() {
       Alert.alert('Connection Error', 'Could not reach the AI server. Is your Codespace running and public?');
     } finally {
       setIsScanning(false);
+    }
+  };
+
+  const handleReportLink = async () => {
+    const cleanUrl = url.trim();
+    if (!cleanUrl) {
+      Alert.alert("Input Required", "No URL available to report.");
+      return;
+    }
+    setIsSubmittingLinkReport(true);
+    try {
+      const res = await submitLinkForTriage(
+        cleanUrl,
+        reportReason,
+        scanResult || 'Uncertain',
+        reportNotes.trim()
+      );
+      setIsReportLinkModalVisible(false);
+      setReportNotes('');
+      Alert.alert(
+        "Report Transmitted 🛡️",
+        res.message || "Link queued in Researcher Triage Sandbox. Our analysts will audit this site."
+      );
+    } catch (err: any) {
+      Alert.alert("Submission Failed", err.message || "Could not submit link for review.");
+    } finally {
+      setIsSubmittingLinkReport(false);
     }
   };
 
@@ -575,6 +619,23 @@ export default function ScanScreen() {
                   </View>
                 </View>
 
+                {/* --- 3-DATABASE PIPELINE: REPORT / VERIFY ACTION --- */}
+                <View style={[styles.reportCard, { backgroundColor: isDark ? '#1A242E' : '#FFFFFF', borderColor: isDark ? '#2D4356' : '#E2E8F0' }]}>
+                  <View style={{ flex: 1, marginRight: 12 }}>
+                    <Text style={[styles.reportCardTitle, { color: textColorPrimary }]}>Contest or Verify Result?</Text>
+                    <Text style={[styles.reportCardSubtext, { color: textColorSecondary }]}>
+                      Submit to C-SEC Threat Researchers for manual sandbox audit.
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.reportActionBtn, { backgroundColor: isDark ? '#233240' : '#F1F5F9', borderColor: isDark ? '#4DA8DA' : '#0284C7' }]}
+                    onPress={() => setIsReportLinkModalVisible(true)}
+                  >
+                    <Feather name="flag" size={14} color={isDark ? '#4DA8DA' : '#0284C7'} />
+                    <Text style={[styles.reportActionBtnText, { color: isDark ? '#4DA8DA' : '#0284C7' }]}>Report Link</Text>
+                  </TouchableOpacity>
+                </View>
+
               </View>
 
             </View>
@@ -679,6 +740,98 @@ export default function ScanScreen() {
         </View>
       </Modal>
 
+      {/* --- 3-DATABASE PIPELINE: REPORT LINK MODAL --- */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={isReportLinkModalVisible}
+        onRequestClose={() => !isSubmittingLinkReport && setIsReportLinkModalVisible(false)}
+      >
+        <View style={styles.modalOverlayCenter}>
+          <View style={[styles.modalContainer, { backgroundColor: cardColor, maxHeight: '85%' }]}>
+            
+            <View style={[styles.modalIconWrapper, { backgroundColor: isDark ? 'rgba(56, 189, 248, 0.15)' : '#E0F2FE' }]}>
+              <Feather name="shield" size={32} color={isDark ? '#38BDF8' : '#0284C7'} />
+            </View>
+            
+            <Text style={[styles.modalTitle, { color: textColorPrimary }]}>Report / Verify Link</Text>
+            
+            <Text style={[styles.modalBody, { color: textColorSecondary, marginBottom: 16 }]}>
+              Submit this URL to the C-SEC Threat Intelligence sandbox for researcher review.
+            </Text>
+
+            <View style={[styles.urlPreviewBox, { backgroundColor: isDark ? '#233240' : '#F1F5F9' }]}>
+              <Text style={[styles.urlPreviewText, { color: textColorPrimary }]} numberOfLines={2}>
+                {url}
+              </Text>
+            </View>
+
+            <Text style={[styles.reportSectionLabel, { color: textColorSecondary }]}>SELECT REASON</Text>
+
+            <View style={{ width: '100%', marginBottom: 16 }}>
+              {[
+                { id: 'False Positive', label: 'False Positive (This is a Safe Site)' },
+                { id: 'Suspected Phishing', label: 'Suspected Phishing (Missed by AI)' },
+                { id: 'Suspicious Content', label: 'Suspicious / Malicious Activity' },
+                { id: 'Typosquatting Spoof', label: 'Typosquatting or Clone Site' }
+              ].map(opt => (
+                <TouchableOpacity
+                  key={opt.id}
+                  style={[
+                    styles.reasonOption,
+                    { 
+                      backgroundColor: reportReason === opt.id ? (isDark ? '#2A3C4D' : '#E0F2FE') : (isDark ? '#1F2C38' : '#F8FAFC'),
+                      borderColor: reportReason === opt.id ? (isDark ? '#38BDF8' : '#0284C7') : 'transparent'
+                    }
+                  ]}
+                  onPress={() => setReportReason(opt.id)}
+                >
+                  <View style={[styles.radioCircle, { borderColor: reportReason === opt.id ? (isDark ? '#38BDF8' : '#0284C7') : textColorSecondary }]}>
+                    {reportReason === opt.id && <View style={[styles.radioDot, { backgroundColor: isDark ? '#38BDF8' : '#0284C7' }]} />}
+                  </View>
+                  <Text style={[styles.reasonLabel, { color: reportReason === opt.id ? textColorPrimary : textColorSecondary }]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TextInput
+              style={[styles.notesInput, { backgroundColor: isDark ? '#233240' : '#F1F5F9', color: textColorPrimary }]}
+              placeholder="Optional notes or details for researchers..."
+              placeholderTextColor={textColorSecondary}
+              value={reportNotes}
+              onChangeText={setReportNotes}
+              multiline
+              numberOfLines={2}
+            />
+
+            <View style={styles.modalButtonsRow}>
+              <TouchableOpacity 
+                style={[styles.modalCancelBtn, { backgroundColor: isDark ? '#233240' : '#E2E8F0' }]}
+                disabled={isSubmittingLinkReport}
+                onPress={() => setIsReportLinkModalVisible(false)}
+              >
+                <Text style={[styles.modalCancelBtnText, { color: textColorSecondary }]}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.modalSubmitBtn, { backgroundColor: isDark ? '#38BDF8' : '#0284C7' }]}
+                disabled={isSubmittingLinkReport}
+                onPress={handleReportLink}
+              >
+                {isSubmittingLinkReport ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Text style={styles.modalSubmitBtnText}>Submit to Triage</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+            
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }
@@ -751,4 +904,115 @@ const styles = StyleSheet.create({
   modalBody: { fontSize: 14, textAlign: 'center', lineHeight: 22, marginBottom: 30, paddingHorizontal: 10 },
   modalActionBtn: { width: '100%', paddingVertical: 18, borderRadius: 25, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 5, elevation: 4 },
   modalActionBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: 'bold', letterSpacing: 1 },
+
+  // --- 3-DATABASE PIPELINE: REPORT CARD & MODAL STYLES ---
+  reportCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginTop: 20,
+  },
+  reportCardTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  reportCardSubtext: {
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  reportActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 6,
+  },
+  reportActionBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  urlPreviewBox: {
+    width: '100%',
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 16,
+  },
+  urlPreviewText: {
+    fontSize: 12,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  reportSectionLabel: {
+    alignSelf: 'flex-start',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  reasonOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 6,
+  },
+  radioCircle: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  radioDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  reasonLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  notesInput: {
+    width: '100%',
+    padding: 12,
+    borderRadius: 12,
+    fontSize: 13,
+    marginBottom: 20,
+    minHeight: 50,
+  },
+  modalButtonsRow: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 12,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 20,
+    alignItems: 'center',
+  },
+  modalCancelBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  modalSubmitBtn: {
+    flex: 2,
+    paddingVertical: 14,
+    borderRadius: 20,
+    alignItems: 'center',
+  },
+  modalSubmitBtnText: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
 });

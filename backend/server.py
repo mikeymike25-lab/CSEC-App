@@ -240,20 +240,42 @@ except Exception:
     whitelist_domains = set()
 
 def get_threat_intel_overrides():
-    """Fetch real-time dynamic blacklist & whitelist overrides persisted by administrators."""
+    """Fetch real-time dynamic blacklist & whitelist overrides persisted by administrators and Database 1 verified_links."""
+    wl = set()
+    bl = set()
     try:
         if firebase_admin and firebase_admin._apps:
             from firebase_admin import firestore
             db = firestore.client()
+
+            # Source 1: system/threat_intel override document
             doc_ref = db.collection('system').document('threat_intel').get()
             if doc_ref.exists:
                 data = doc_ref.to_dict()
-                wl = set([str(x).lower().strip() for x in data.get('whitelist', []) if x])
-                bl = set([str(x).lower().strip() for x in data.get('blacklist', []) if x])
-                return wl, bl
+                wl.update([str(x).lower().strip() for x in data.get('whitelist', []) if x])
+                bl.update([str(x).lower().strip() for x in data.get('blacklist', []) if x])
+
+            # Source 2: Database 1 verified_links collection (Ground Truth Matrix)
+            try:
+                links_snap = db.collection('verified_links').stream()
+                for doc_item in links_snap:
+                    l_data = doc_item.to_dict()
+                    v = l_data.get('verdict')
+                    domain_val = str(l_data.get('domain', '')).lower().strip()
+                    url_val = str(l_data.get('url', '')).lower().strip()
+                    if v == 'Safe':
+                        if domain_val: wl.add(domain_val)
+                        if url_val: wl.add(url_val)
+                    elif v == 'Phishing':
+                        if domain_val: bl.add(domain_val)
+                        if url_val: bl.add(url_val)
+            except Exception as snap_err:
+                print(f"[THREAT INTEL] verified_links stream notice: {snap_err}")
+
+            return wl, bl
     except Exception as e:
         print(f"[THREAT INTEL] Dynamic sync notice: {e}")
-    return set(), set()
+    return wl, bl
 
 
 

@@ -1,12 +1,19 @@
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Dimensions, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, Modal, Platform, SafeAreaView, ScrollView, Share, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 // --- FIREBASE IMPORTS ---
-// ADDED: query and orderBy to sort reports newest-first, arrayUnion for threat intel overrides
 import { arrayUnion, collection, doc, getDoc, getDocs, onSnapshot, orderBy, query, setDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../firebaseConfig';
+import { 
+  forceOverrideLink, 
+  removeVerifiedLink, 
+  resolveBacklogTicket, 
+  exportThreatIntelData,
+  VerifiedLink,
+  TriageTicket 
+} from '../services/threatIntelService';
 
 // --- THEME CONTEXT ---
 import { useTheme } from '../context/ThemeContext';
@@ -54,6 +61,14 @@ export default function AdminScreen() {
   const [isReportsVisible, setIsReportsVisible] = useState(false);
   const [reports, setReports] = useState<ReportData[]>([]);
   const [isLoadingReports, setIsLoadingReports] = useState(false);
+
+  // --- 3-DATABASE PIPELINE: RESEARCHER TRIAGE & VERIFIED LINKS STATE ---
+  const [isTriageVisible, setIsTriageVisible] = useState(false);
+  const [triageTickets, setTriageTickets] = useState<TriageTicket[]>([]);
+  const [isVerifiedLinksVisible, setIsVerifiedLinksVisible] = useState(false);
+  const [verifiedLinks, setVerifiedLinks] = useState<VerifiedLink[]>([]);
+  const [isExporting, setIsExporting] = useState(false);
+  const [verifiedSearch, setVerifiedSearch] = useState('');
 
   // --- DYNAMIC COLORS ---
   const bgColor = isDark ? '#121A21' : '#F9F7E8';
@@ -132,7 +147,28 @@ export default function AdminScreen() {
       }
     });
 
-    return () => { unsub(); unsubStats(); unsubThreat(); };
+    // Database 1: Verified Links Listener
+    const unsubVerified = onSnapshot(collection(db, 'verified_links'), (snap) => {
+      const items: VerifiedLink[] = [];
+      snap.forEach(d => items.push({ id: d.id, ...d.data() } as VerifiedLink));
+      setVerifiedLinks(items);
+    });
+
+    // Database 3: Triage Backlog Queue Listener
+    const unsubTriage = onSnapshot(collection(db, 'triage_backlog'), (snap) => {
+      const tickets: TriageTicket[] = [];
+      snap.forEach(d => tickets.push({ id: d.id, ...d.data() } as TriageTicket));
+      tickets.sort((a, b) => (b.reportCount || 0) - (a.reportCount || 0));
+      setTriageTickets(tickets);
+    });
+
+    return () => { 
+      unsub(); 
+      unsubStats(); 
+      unsubThreat(); 
+      unsubVerified(); 
+      unsubTriage(); 
+    };
   }, []);
 
   const logAction = (message: string) => {
@@ -180,21 +216,85 @@ export default function AdminScreen() {
     }
 
     try {
-      await setDoc(doc(db, 'system', 'threat_intel'), {
-        [type]: arrayUnion(cleanTarget),
-        updatedAt: new Date().toISOString(),
-        lastUpdatedBy: auth.currentUser?.email || adminId
-      }, { merge: true });
+      const verdict = type === 'whitelist' ? 'Safe' : 'Phishing';
+      const res = await forceOverrideLink(cleanTarget, verdict, 'Admin Direct Override');
 
       Alert.alert(
-        "Matrix Updated & Persisted",
-        `Target "${cleanTarget}" has been saved to the global ${type}. All mobile scanners will apply this override immediately.`
+        "Matrix Enforced 🛡️",
+        `Target "${res.domain}" is now permanently enforced as ${verdict.toUpperCase()}.\n\n✓ Written to Database 1 (Verified Truth)\n✓ Cleared from opposing blacklist/whitelist\n✓ All mobile scanners will apply this immediately.`
       );
-      logAction(`Persisted ${cleanTarget} to Global ${type.toUpperCase()}`);
+      logAction(`Enforced ${res.domain} as ${verdict.toUpperCase()} in DB 1 Matrix`);
       setThreatUrl('');
     } catch (error: any) {
       console.error("Threat Intel Update Failed:", error);
-      Alert.alert("Update Failed", "Could not persist threat intelligence override to Firestore.");
+      Alert.alert("Update Failed", "Could not persist threat override: " + error.message);
+    }
+  };
+
+  const handleResolveTriage = async (ticket: TriageTicket, verdict: 'Safe' | 'Phishing') => {
+    try {
+      await resolveBacklogTicket(ticket.id, ticket.url, verdict);
+      Alert.alert("Ticket Resolved 🛡️", `Link "${ticket.domain}" has been verified as ${verdict} and promoted to Database 1.`);
+      logAction(`Resolved Triage Ticket for ${ticket.domain} -> ${verdict}`);
+    } catch (err: any) {
+      Alert.alert("Triage Error", err.message || "Failed to resolve ticket.");
+    }
+  };
+
+  const handleRemoveVerified = (link: VerifiedLink) => {
+    Alert.alert(
+      "Remove Override",
+      `Are you sure you want to remove "${link.domain}" from the ${link.verdict} matrix? Scanners will revert to standard AI heuristics.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Remove", 
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await removeVerifiedLink(link.id, link.domain, link.verdict);
+              logAction(`Removed ${link.domain} from Verified ${link.verdict} matrix`);
+            } catch (err: any) {
+              Alert.alert("Error", err.message || "Failed to remove verified link.");
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleExportData = async (format: 'csv' | 'json') => {
+    setIsExporting(true);
+    try {
+      const { dataString, filename, count } = await exportThreatIntelData(format);
+      if (count === 0) {
+        Alert.alert("No Records", "There are currently no verified links to export.");
+        return;
+      }
+
+      if (Platform.OS === 'web') {
+        const mimeType = format === 'csv' ? 'text/csv;charset=utf-8;' : 'application/json;charset=utf-8;';
+        const blob = new Blob([dataString], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        Alert.alert("Export Downloaded", `Saved ${count} verified threat intelligence records to ${filename}`);
+      } else {
+        await Share.share({
+          title: `C-SEC Threat Intelligence Export (${format.toUpperCase()})`,
+          message: dataString
+        });
+      }
+      logAction(`Exported ${count} Threat Intel Records (${format.toUpperCase()})`);
+    } catch (err: any) {
+      Alert.alert("Export Error", err.message || "Failed to export data.");
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -356,6 +456,66 @@ export default function AdminScreen() {
                 <Text style={[styles.halfButtonText, { color: dangerAccent }]}>Force Blacklist</Text>
               </TouchableOpacity>
             </View>
+
+            <View style={[styles.divider, { backgroundColor: isDark ? '#2D4356' : '#F2F0E4', marginVertical: 14 }]} />
+
+            {/* Quick Actions: Manage Matrix & Export Intel Data */}
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity 
+                style={[styles.halfButton, { backgroundColor: isDark ? '#233240' : '#F2F0E4', borderColor: isDark ? '#4DA8DA' : '#2D4356' }]} 
+                onPress={() => setIsVerifiedLinksVisible(true)}
+              >
+                <Feather name="list" size={15} color={textColorPrimary} />
+                <Text style={[styles.halfButtonText, { color: textColorPrimary }]}>Manage ({verifiedLinks.length})</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.halfButton, { backgroundColor: isDark ? '#233240' : '#F2F0E4', borderColor: isDark ? '#4DA8DA' : '#2D4356' }]} 
+                onPress={() => handleExportData('csv')}
+                disabled={isExporting}
+              >
+                <Feather name="download" size={15} color={isDark ? '#4DA8DA' : '#1E3246'} />
+                <Text style={[styles.halfButtonText, { color: isDark ? '#4DA8DA' : '#1E3246' }]}>
+                  {isExporting ? 'Exporting...' : 'Export CSV'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* 2.5 RESEARCHER TRIAGE & BACKLOG (DATABASE 3) */}
+          <View style={[styles.card, { backgroundColor: cardColor, borderColor: isDark ? '#38BDF8' : '#0284C7', borderWidth: 1 }]}>
+            <View style={styles.cardHeader}>
+              <MaterialCommunityIcons name="clipboard-clock-outline" size={20} color={isDark ? '#38BDF8' : '#0284C7'} />
+              <Text style={[styles.cardTitle, { color: textColorPrimary }]}>Researcher Triage Sandbox</Text>
+            </View>
+            <Text style={[styles.toggleSubtitle, { color: textColorSecondary, marginBottom: 12 }]}>
+              Database 3 Backlog: Validate user-submitted & AI greylist links before promoting to Database 1.
+            </Text>
+
+            <View style={styles.statsGrid}>
+              <View style={[styles.statBox, { backgroundColor: inputBgColor }]}>
+                <Text style={[styles.statLabel, { color: warningAccent }]}>ACTIVE BACKLOG</Text>
+                <Text style={[styles.statValue, { color: warningAccent }]}>
+                  {triageTickets.filter(t => t.status === 'pending').length}
+                </Text>
+              </View>
+              <View style={[styles.statBox, { backgroundColor: inputBgColor }]}>
+                <Text style={[styles.statLabel, { color: successAccent }]}>VERIFIED & PROMOTED</Text>
+                <Text style={[styles.statValue, { color: successAccent }]}>
+                  {triageTickets.filter(t => t.status === 'resolved').length}
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity 
+              style={[styles.primaryButton, { backgroundColor: isDark ? '#0284C7' : '#0369A1', marginTop: 12 }]} 
+              onPress={() => setIsTriageVisible(true)}
+            >
+              <Feather name="inbox" size={18} color="#FFF" />
+              <Text style={styles.primaryButtonText}>
+                Open Triage Queue ({triageTickets.filter(t => t.status === 'pending').length} Pending)
+              </Text>
+            </TouchableOpacity>
           </View>
 
           {/* 3. NEURAL ENGINE ROUTING */}
@@ -609,6 +769,206 @@ export default function AdminScreen() {
                 ))}
               </ScrollView>
             )}
+          </View>
+        </Modal>
+
+        {/* --- DATABASE 1: VERIFIED LINKS & EXPORT MODAL --- */}
+        <Modal visible={isVerifiedLinksVisible} animationType="slide" presentationStyle="pageSheet">
+          <View style={[styles.modalContainer, { backgroundColor: bgColor }]}>
+            <View style={[styles.modalHeader, { backgroundColor: cardColor }]}>
+              <View>
+                <Text style={[styles.modalTitle, { color: textColorPrimary }]}>Verified Threat Matrix</Text>
+                <Text style={[styles.headerSubtitle, { color: textColorSecondary, marginTop: 2 }]}>
+                  Database 1: {verifiedLinks.length} Authoritative Ground Truth Links
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setIsVerifiedLinksVisible(false)} style={styles.closeBtn}>
+                <Ionicons name="close-circle" size={30} color={textColorSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Search Filter */}
+            <View style={styles.searchContainer}>
+              <View style={[styles.searchBox, { backgroundColor: inputBgColor }]}>
+                <Feather name="search" size={20} color={textColorSecondary} style={{ marginRight: 10 }} />
+                <TextInput 
+                  style={[styles.searchInput, { color: textColorPrimary }]} 
+                  placeholder="Filter verified domains..." 
+                  placeholderTextColor={textColorSecondary} 
+                  value={verifiedSearch} 
+                  onChangeText={setVerifiedSearch} 
+                />
+              </View>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20 }}>
+              {verifiedLinks.filter(l => (l.domain || '').toLowerCase().includes(verifiedSearch.toLowerCase()) || (l.url || '').toLowerCase().includes(verifiedSearch.toLowerCase())).length === 0 ? (
+                <Text style={{ color: textColorSecondary, textAlign: 'center', marginTop: 40, fontSize: 16 }}>
+                  No verified links found in Database 1.
+                </Text>
+              ) : (
+                verifiedLinks
+                  .filter(l => (l.domain || '').toLowerCase().includes(verifiedSearch.toLowerCase()) || (l.url || '').toLowerCase().includes(verifiedSearch.toLowerCase()))
+                  .map((link) => (
+                    <View 
+                      key={link.id} 
+                      style={[
+                        styles.userCard, 
+                        { 
+                          backgroundColor: cardColor, 
+                          borderLeftWidth: 4, 
+                          borderLeftColor: link.verdict === 'Safe' ? successAccent : dangerAccent 
+                        }
+                      ]}
+                    >
+                      <View style={styles.userInfoRow}>
+                        <View style={{ flex: 1, marginRight: 10 }}>
+                          <Text style={[styles.userName, { color: textColorPrimary }]} numberOfLines={1}>
+                            {link.domain}
+                          </Text>
+                          <Text style={[styles.userEmail, { color: textColorSecondary }]} numberOfLines={1}>
+                            {link.url}
+                          </Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <View style={{ backgroundColor: link.verdict === 'Safe' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
+                            <Text style={{ color: link.verdict === 'Safe' ? successAccent : dangerAccent, fontSize: 11, fontWeight: 'bold' }}>
+                              {link.verdict.toUpperCase()}
+                            </Text>
+                          </View>
+                          <TouchableOpacity 
+                            onPress={() => handleRemoveVerified(link)}
+                            style={{ padding: 6, borderRadius: 8, backgroundColor: isDark ? '#233240' : '#F1F5F9' }}
+                          >
+                            <Feather name="trash-2" size={14} color={dangerAccent} />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+
+                      <View style={[styles.divider, { backgroundColor: isDark ? '#2D4356' : '#F2F0E4', marginVertical: 10 }]} />
+
+                      <Text style={{ color: textColorSecondary, fontSize: 11 }}>
+                        Verified by: <Text style={{ color: textColorPrimary, fontWeight: '600' }}>{link.verifiedBy || 'Admin'}</Text> • {link.category || 'General'}
+                      </Text>
+                    </View>
+                  ))
+              )}
+            </ScrollView>
+
+            {/* Bottom Export Bar */}
+            <View style={{ padding: 20, backgroundColor: cardColor, borderTopWidth: 1, borderTopColor: isDark ? '#2D4356' : '#E2E8F0', flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity 
+                style={[styles.primaryButton, { flex: 1, backgroundColor: successAccent, paddingVertical: 14 }]}
+                onPress={() => handleExportData('csv')}
+                disabled={isExporting}
+              >
+                <Feather name="download" size={16} color="#FFF" />
+                <Text style={[styles.primaryButtonText, { fontSize: 13 }]}>Export CSV</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.primaryButton, { flex: 1, backgroundColor: primaryAccent, paddingVertical: 14 }]}
+                onPress={() => handleExportData('json')}
+                disabled={isExporting}
+              >
+                <Feather name="file-text" size={16} color="#FFF" />
+                <Text style={[styles.primaryButtonText, { fontSize: 13 }]}>Export JSON</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* --- DATABASE 3: RESEARCHER TRIAGE & BACKLOG QUEUE MODAL --- */}
+        <Modal visible={isTriageVisible} animationType="slide" presentationStyle="pageSheet">
+          <View style={[styles.modalContainer, { backgroundColor: bgColor }]}>
+            <View style={[styles.modalHeader, { backgroundColor: cardColor }]}>
+              <View>
+                <Text style={[styles.modalTitle, { color: textColorPrimary }]}>Researcher Triage Queue</Text>
+                <Text style={[styles.headerSubtitle, { color: textColorSecondary, marginTop: 2 }]}>
+                  Database 3: {triageTickets.filter(t => t.status === 'pending').length} Backlog Tickets Awaiting Validation
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setIsTriageVisible(false)} style={styles.closeBtn}>
+                <Ionicons name="close-circle" size={30} color={textColorSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20 }}>
+              {triageTickets.length === 0 ? (
+                <Text style={{ color: textColorSecondary, textAlign: 'center', marginTop: 40, fontSize: 16 }}>
+                  Backlog is clean! No pending link tickets in Database 3.
+                </Text>
+              ) : (
+                triageTickets.map((ticket) => (
+                  <View 
+                    key={ticket.id} 
+                    style={[
+                      styles.userCard, 
+                      { 
+                        backgroundColor: cardColor, 
+                        borderLeftWidth: 4, 
+                        borderLeftColor: ticket.status === 'resolved' ? successAccent : (ticket.priority === 'HIGH' ? dangerAccent : warningAccent) 
+                      }
+                    ]}
+                  >
+                    <View style={styles.userInfoRow}>
+                      <View style={{ flex: 1, marginRight: 10 }}>
+                        <Text style={[styles.userName, { color: textColorPrimary }]} numberOfLines={1}>
+                          {ticket.domain}
+                        </Text>
+                        <Text style={[styles.userEmail, { color: textColorSecondary }]} numberOfLines={2}>
+                          {ticket.url}
+                        </Text>
+                      </View>
+                      
+                      <View style={{ backgroundColor: ticket.priority === 'HIGH' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
+                        <Text style={{ color: ticket.priority === 'HIGH' ? dangerAccent : warningAccent, fontSize: 10, fontWeight: 'bold' }}>
+                          🚩 REPORTED {ticket.reportCount || 1}X
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={[styles.divider, { backgroundColor: isDark ? '#2D4356' : '#F2F0E4', marginVertical: 10 }]} />
+
+                    <Text style={{ color: textColorPrimary, fontSize: 12, marginBottom: 4 }}>
+                      Reasons: <Text style={{ color: textColorSecondary }}>{(ticket.reasons || []).join(', ') || 'User Flagged'}</Text>
+                    </Text>
+                    {ticket.initialVerdict && (
+                      <Text style={{ color: textColorSecondary, fontSize: 11, marginBottom: 10 }}>
+                        Initial AI Verdict: <Text style={{ color: textColorPrimary, fontWeight: '600' }}>{ticket.initialVerdict}</Text>
+                      </Text>
+                    )}
+
+                    {ticket.status === 'resolved' ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                        <Feather name="check-circle" size={14} color={successAccent} />
+                        <Text style={{ color: successAccent, fontSize: 12, fontWeight: 'bold' }}>
+                          Promoted to Database 1 ({ticket.resolution || 'Resolved'})
+                        </Text>
+                      </View>
+                    ) : (
+                      <View style={{ flexDirection: 'row', gap: 10, marginTop: 6 }}>
+                        <TouchableOpacity 
+                          style={[styles.halfButton, { flex: 1, backgroundColor: 'rgba(16, 185, 129, 0.1)', borderColor: successAccent, padding: 10 }]}
+                          onPress={() => handleResolveTriage(ticket, 'Safe')}
+                        >
+                          <Feather name="shield" size={14} color={successAccent} />
+                          <Text style={[styles.halfButtonText, { color: successAccent, fontSize: 12 }]}>Verify Safe</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity 
+                          style={[styles.halfButton, { flex: 1, backgroundColor: 'rgba(239, 68, 68, 0.1)', borderColor: dangerAccent, padding: 10 }]}
+                          onPress={() => handleResolveTriage(ticket, 'Phishing')}
+                        >
+                          <Feather name="alert-triangle" size={14} color={dangerAccent} />
+                          <Text style={[styles.halfButtonText, { color: dangerAccent, fontSize: 12 }]}>Verify Phishing</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                ))
+              )}
+            </ScrollView>
           </View>
         </Modal>
       </View>
