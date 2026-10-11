@@ -44,6 +44,7 @@ export default function ScanScreen() {
   const [reportReason, setReportReason] = useState('Suspected Phishing');
   const [reportNotes, setReportNotes] = useState('');
   const [isSubmittingLinkReport, setIsSubmittingLinkReport] = useState(false);
+  const [reportSuccessMessage, setReportSuccessMessage] = useState<string | null>(null);
 
   // --- MODAL & SECURITY STATES ---
   const [isVerificationModalVisible, setIsVerificationModalVisible] = useState(false);
@@ -157,6 +158,7 @@ export default function ScanScreen() {
     }
 
     const cleanUrl = url.trim();
+    setReportSuccessMessage(null);
     if (!cleanUrl) {
       Alert.alert("Input Required", "Please enter a URL to scan.");
       return;
@@ -399,7 +401,11 @@ export default function ScanScreen() {
   const handleReportLink = async () => {
     const cleanUrl = url.trim();
     if (!cleanUrl) {
-      Alert.alert("Input Required", "No URL available to report.");
+      if (Platform.OS === 'web') {
+        window.alert("Please input or paste a URL first to submit a report.");
+      } else {
+        Alert.alert("Input Required", "No URL available to report.");
+      }
       return;
     }
     setIsSubmittingLinkReport(true);
@@ -412,12 +418,24 @@ export default function ScanScreen() {
       );
       setIsReportLinkModalVisible(false);
       setReportNotes('');
-      Alert.alert(
-        "Report Transmitted 🛡️",
-        res.message || "Link queued in Researcher Triage Sandbox. Our analysts will audit this site."
-      );
+      setReportSuccessMessage(res.message);
+
+      if (Platform.OS === 'web') {
+        window.alert(`Report Transmitted 🛡️\n\n${res.message}`);
+      } else {
+        Alert.alert(
+          "Report Transmitted 🛡️",
+          res.message || "Link queued in Researcher Triage Sandbox. Our analysts will audit this site."
+        );
+      }
     } catch (err: any) {
-      Alert.alert("Submission Failed", err.message || "Could not submit link for review.");
+      console.error("Link Report Error:", err);
+      const errMsg = err?.message || "Could not submit link for review.";
+      if (Platform.OS === 'web') {
+        window.alert(`Submission Error: ${errMsg}\n\nPlease ensure you have published the latest Firestore Security Rules.`);
+      } else {
+        Alert.alert("Submission Notice", errMsg);
+      }
     } finally {
       setIsSubmittingLinkReport(false);
     }
@@ -498,6 +516,25 @@ export default function ScanScreen() {
           </Text>
         </TouchableOpacity>
 
+        {/* --- DIRECT REPORT ACTION LINK --- */}
+        <TouchableOpacity 
+          style={styles.directReportLink}
+          onPress={() => {
+            if (!url.trim()) {
+              if (Platform.OS === 'web') window.alert("Please enter or paste a URL first to report it.");
+              else Alert.alert("Input Required", "Please enter or paste a URL first to report it.");
+              return;
+            }
+            setIsReportLinkModalVisible(true);
+          }}
+          activeOpacity={0.7}
+        >
+          <Feather name="flag" size={13} color={isDark ? '#38BDF8' : '#0284C7'} style={{ marginRight: 6 }} />
+          <Text style={[styles.directReportLinkText, { color: isDark ? '#38BDF8' : '#0284C7' }]}>
+            Report an unverified or phishing link directly
+          </Text>
+        </TouchableOpacity>
+
         <View style={styles.statusContainer}>
           
           {!scanResult && (
@@ -519,6 +556,19 @@ export default function ScanScreen() {
           {scanResult && (
             <View style={styles.resultDetailsContainer}>
               
+              {/* --- REPORT CONFIRMATION BANNER --- */}
+              {reportSuccessMessage && (
+                <View style={[styles.successBanner, { backgroundColor: isDark ? 'rgba(34, 197, 94, 0.15)' : '#DCFCE7', borderColor: greenAccent }]}>
+                  <Feather name="check-circle" size={18} color={greenAccent} style={{ marginRight: 8 }} />
+                  <Text style={[styles.successBannerText, { color: isDark ? '#86EFAC' : '#15803D' }]}>
+                    {reportSuccessMessage}
+                  </Text>
+                  <TouchableOpacity onPress={() => setReportSuccessMessage(null)} style={{ padding: 4 }}>
+                    <Feather name="x" size={16} color={greenAccent} />
+                  </TouchableOpacity>
+                </View>
+              )}
+
               <View style={styles.resultHeader}>
                  <MaterialCommunityIcons 
                     name={scanResult === 'Phishing' ? "alert-octagon" : (scanResult === 'Suspicious' ? "alert" : "shield-check")} 
@@ -529,6 +579,34 @@ export default function ScanScreen() {
                     {getVerdictText()}
                  </Text>
               </View>
+
+              {/* --- HIGH-VISIBILITY REPORT / CONTEST BUTTON (RIGHT AT TOP) --- */}
+              <TouchableOpacity
+                style={[
+                  styles.prominentReportBanner,
+                  { 
+                    backgroundColor: isDark ? 'rgba(56, 189, 248, 0.12)' : '#F0F9FF', 
+                    borderColor: isDark ? '#38BDF8' : '#0284C7' 
+                  }
+                ]}
+                onPress={() => setIsReportLinkModalVisible(true)}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.prominentReportIconWrapper, { backgroundColor: isDark ? 'rgba(56, 189, 248, 0.25)' : '#E0F2FE' }]}>
+                  <Feather name="flag" size={18} color={isDark ? '#38BDF8' : '#0284C7'} />
+                </View>
+                <View style={{ flex: 1, paddingHorizontal: 10 }}>
+                  <Text style={[styles.prominentReportBannerTitle, { color: textColorPrimary }]}>
+                    Contest or Report This Link
+                  </Text>
+                  <Text style={[styles.prominentReportBannerSub, { color: textColorSecondary }]}>
+                    Incorrect result? Send to C-SEC Threat Researchers for manual triage.
+                  </Text>
+                </View>
+                <View style={[styles.prominentReportChip, { backgroundColor: isDark ? '#38BDF8' : '#0284C7' }]}>
+                  <Text style={styles.prominentReportChipText}>REPORT</Text>
+                </View>
+              </TouchableOpacity>
 
               {isCached && (
                 <TouchableOpacity 
@@ -1014,5 +1092,75 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 13,
     fontWeight: '700',
+  },
+  prominentReportBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    marginBottom: 16,
+    marginTop: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  prominentReportIconWrapper: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  prominentReportBannerTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  prominentReportBannerSub: {
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  prominentReportChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  prominentReportChipText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  directReportLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: -16,
+    marginBottom: 24,
+    paddingVertical: 6,
+  },
+  directReportLinkText: {
+    fontSize: 13,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+  successBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 16,
+    width: '100%',
+  },
+  successBannerText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

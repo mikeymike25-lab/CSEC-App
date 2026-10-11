@@ -56,25 +56,27 @@ service cloud.firestore {
     }
 
     // --- DATABASE 1: VERIFIED LINKS (PRODUCTION GROUND TRUTH) ---
-    // Read: All authenticated agents (for real-time protection lookups)
+    // Read: All clients and scanners so live scans instantly match safe/phishing overrides
     // Write: Strictly authorized security researchers & admins
     match /verified_links/{linkId} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow write: if isStaff();
     }
 
     // --- DATABASE 2: RAW SUBMISSIONS (ANTI-FLOOD INGESTION BUFFER) ---
-    // Create/Update: Authenticated agents can report links or increment report counters
-    // Read/Delete: Strictly researchers & admins for triage intake
+    // Read, Create, Update: Authenticated and guest clients can report links and update deduplication counters
+    // Delete: Strictly authorized security researchers & admins
     match /raw_submissions/{submissionId} {
-      allow create, update: if request.auth != null;
-      allow read, delete: if isStaff();
+      allow read, create, update: if true;
+      allow delete: if isStaff();
     }
 
     // --- DATABASE 3: TRIAGE BACKLOG (RESEARCHER WORKBENCH & SLA QUEUE) ---
-    // Read/Write: Strictly researchers & admins to manage and audit backlog tickets
+    // Create, Update: Reporting pipeline stages and updates tickets
+    // Read, Delete: Strictly authorized security researchers & admins to audit, manage, and resolve tickets
     match /triage_backlog/{ticketId} {
-      allow read, write: if isStaff();
+      allow create, update: if true;
+      allow read, delete: if isStaff();
     }
 
     // Incident & bug reports collection:

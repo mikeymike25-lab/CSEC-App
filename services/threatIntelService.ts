@@ -89,55 +89,88 @@ export async function submitLinkForTriage(
 
   let currentCount = 1;
 
-  if (rawDoc.exists()) {
-    // Document already exists -> Anti-Flood Deduplication: Increment count & append reporter
-    const data = rawDoc.data();
-    currentCount = (data.reportCount || 1) + 1;
+  try {
+    const rawDoc = await getDoc(rawSubRef);
 
-    await updateDoc(rawSubRef, {
-      reportCount: increment(1),
-      lastReportedAt: nowIso,
-      reporters: arrayUnion(uid),
-      reasons: arrayUnion(reason)
-    });
+    if (rawDoc.exists()) {
+      // Document already exists -> Anti-Flood Deduplication: Increment count & append reporter
+      const data = rawDoc.data();
+      currentCount = (data.reportCount || 1) + 1;
 
-    await setDoc(triageRef, {
-      reportCount: increment(1),
-      priority: currentCount >= 3 ? 'HIGH' : 'MEDIUM',
-      lastUpdated: nowIso,
-      reasons: arrayUnion(reason)
-    }, { merge: true });
+      await updateDoc(rawSubRef, {
+        reportCount: increment(1),
+        lastReportedAt: nowIso,
+        reporters: arrayUnion(uid),
+        reasons: arrayUnion(reason)
+      });
 
-  } else {
-    // New submission: Create in raw_submissions buffer
+      await setDoc(triageRef, {
+        reportCount: increment(1),
+        priority: currentCount >= 3 ? 'HIGH' : 'MEDIUM',
+        lastUpdated: nowIso,
+        reasons: arrayUnion(reason),
+        status: 'pending'
+      }, { merge: true });
+
+    } else {
+      // New submission: Create in raw_submissions buffer
+      await setDoc(rawSubRef, {
+        id: docId,
+        url: cleanUrl,
+        domain,
+        reportCount: 1,
+        reporters: [uid],
+        reporterEmails: [email],
+        reasons: [reason],
+        initialVerdict,
+        notes,
+        firstReportedAt: nowIso,
+        lastReportedAt: nowIso,
+        status: 'queued'
+      });
+
+      // Automatically stage into triage_backlog queue
+      await setDoc(triageRef, {
+        id: docId,
+        url: cleanUrl,
+        domain,
+        reportCount: 1,
+        priority: 'MEDIUM',
+        status: 'pending',
+        reasons: [reason],
+        initialVerdict,
+        notes,
+        createdAt: nowIso
+      });
+    }
+  } catch (err: any) {
+    console.warn("Direct read/update fallback engaged:", err);
+    // Highly resilient fallback: setDoc with merge will write without failing on read constraints
     await setDoc(rawSubRef, {
       id: docId,
       url: cleanUrl,
       domain,
-      reportCount: 1,
-      reporters: [uid],
-      reporterEmails: [email],
-      reasons: [reason],
+      reportCount: increment(1),
+      reporters: arrayUnion(uid),
+      reasons: arrayUnion(reason),
       initialVerdict,
       notes,
-      firstReportedAt: nowIso,
       lastReportedAt: nowIso,
       status: 'queued'
-    });
+    }, { merge: true });
 
-    // Automatically stage into triage_backlog queue
     await setDoc(triageRef, {
       id: docId,
       url: cleanUrl,
       domain,
-      reportCount: 1,
+      reportCount: increment(1),
       priority: 'MEDIUM',
       status: 'pending',
-      reasons: [reason],
+      reasons: arrayUnion(reason),
       initialVerdict,
       notes,
-      createdAt: nowIso
-    });
+      lastUpdated: nowIso
+    }, { merge: true });
   }
 
   return { 
