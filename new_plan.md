@@ -141,9 +141,9 @@ By combining our current high-speed static gates (<10ms) with CSEC_AIv2's live S
 ---
 
 ### Phase 6: Deployment & Monitoring
-- [ ] **6.1. Push Code to Git Repository**
-  - [ ] Commit `backend/requirements.txt`, `backend/server.py`, `backend/v2_feature_extractor.py`, `backend/models/phishing_rf_model.pkl`, `backend/data/csec_v2_dataset.csv`.
-  - [ ] Push changes to GitHub (`git push origin main`).
+- [x] **6.1. Push Code to Git Repository**
+  - [x] Commit `backend/requirements.txt`, `backend/server.py`, `backend/v2_feature_extractor.py`, `backend/models/phishing_rf_model.pkl`, `backend/data/csec_v2_dataset.csv`.
+  - [x] Push changes to GitHub (`git push origin main`).
 - [ ] **6.2. Verify Render Build & Logs**
   - [ ] Log in to Render Dashboard (`dashboard.render.com`).
   - [ ] Trigger manual deploy or verify auto-deploy triggers.
