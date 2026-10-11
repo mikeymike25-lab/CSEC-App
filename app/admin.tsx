@@ -1,4 +1,5 @@
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, Modal, Platform, SafeAreaView, ScrollView, Share, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -69,6 +70,8 @@ export default function AdminScreen() {
   const [verifiedLinks, setVerifiedLinks] = useState<VerifiedLink[]>([]);
   const [isExporting, setIsExporting] = useState(false);
   const [verifiedSearch, setVerifiedSearch] = useState('');
+  const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
 
   // --- DYNAMIC COLORS ---
   const bgColor = isDark ? '#121A21' : '#F9F7E8';
@@ -231,10 +234,24 @@ export default function AdminScreen() {
     }
   };
 
+  const handleCopyLink = async (targetUrl: string) => {
+    if (!targetUrl) return;
+    try {
+      await Clipboard.setStringAsync(targetUrl);
+      setCopiedUrl(targetUrl);
+      setTimeout(() => {
+        setCopiedUrl(null);
+      }, 2500);
+    } catch (e) {
+      console.error("Clipboard copy error:", e);
+    }
+  };
+
   const handleResolveTriage = async (ticket: TriageTicket, verdict: 'Safe' | 'Phishing') => {
     try {
       await resolveBacklogTicket(ticket.id, ticket.url, verdict);
-      Alert.alert("Ticket Resolved 🛡️", `Link "${ticket.domain}" has been verified as ${verdict} and promoted to Database 1.`);
+      setActionFeedback(`Verified "${ticket.domain}" as ${verdict.toUpperCase()} (Promoted to Database 1)`);
+      setTimeout(() => setActionFeedback(null), 4000);
       logAction(`Resolved Triage Ticket for ${ticket.domain} -> ${verdict}`);
     } catch (err: any) {
       Alert.alert("Triage Error", err.message || "Failed to resolve ticket.");
@@ -829,6 +846,21 @@ export default function AdminScreen() {
                           <Text style={[styles.userEmail, { color: textColorSecondary }]} numberOfLines={1}>
                             {link.url}
                           </Text>
+                          <TouchableOpacity 
+                            style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, alignSelf: 'flex-start' }}
+                            onPress={() => handleCopyLink(link.url)}
+                            activeOpacity={0.7}
+                          >
+                            <Feather 
+                              name={copiedUrl === link.url ? "check" : "copy"} 
+                              size={12} 
+                              color={copiedUrl === link.url ? successAccent : (isDark ? '#4DA8DA' : '#0284C7')} 
+                              style={{ marginRight: 4 }}
+                            />
+                            <Text style={{ fontSize: 11, fontWeight: '600', color: copiedUrl === link.url ? successAccent : (isDark ? '#4DA8DA' : '#0284C7') }}>
+                              {copiedUrl === link.url ? "Copied!" : "Copy Link"}
+                            </Text>
+                          </TouchableOpacity>
                         </View>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                           <View style={{ backgroundColor: link.verdict === 'Safe' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
@@ -893,6 +925,16 @@ export default function AdminScreen() {
               </TouchableOpacity>
             </View>
 
+            {actionFeedback && (
+              <View style={{ marginHorizontal: 20, marginTop: 12, padding: 12, borderRadius: 12, backgroundColor: 'rgba(16, 185, 129, 0.15)', borderWidth: 1, borderColor: successAccent, flexDirection: 'row', alignItems: 'center' }}>
+                <Feather name="check-circle" size={16} color={successAccent} style={{ marginRight: 8 }} />
+                <Text style={{ color: successAccent, fontSize: 13, fontWeight: '700', flex: 1 }}>{actionFeedback}</Text>
+                <TouchableOpacity onPress={() => setActionFeedback(null)}>
+                  <Feather name="x" size={14} color={successAccent} />
+                </TouchableOpacity>
+              </View>
+            )}
+
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20 }}>
               {triageTickets.length === 0 ? (
                 <Text style={{ color: textColorSecondary, textAlign: 'center', marginTop: 40, fontSize: 16 }}>
@@ -919,6 +961,21 @@ export default function AdminScreen() {
                         <Text style={[styles.userEmail, { color: textColorSecondary }]} numberOfLines={2}>
                           {ticket.url}
                         </Text>
+                        <TouchableOpacity 
+                          style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, alignSelf: 'flex-start' }}
+                          onPress={() => handleCopyLink(ticket.url)}
+                          activeOpacity={0.7}
+                        >
+                          <Feather 
+                            name={copiedUrl === ticket.url ? "check" : "copy"} 
+                            size={12} 
+                            color={copiedUrl === ticket.url ? successAccent : (isDark ? '#4DA8DA' : '#0284C7')} 
+                            style={{ marginRight: 4 }}
+                          />
+                          <Text style={{ fontSize: 11, fontWeight: '600', color: copiedUrl === ticket.url ? successAccent : (isDark ? '#4DA8DA' : '#0284C7') }}>
+                            {copiedUrl === ticket.url ? "Copied Link!" : "Copy Link"}
+                          </Text>
+                        </TouchableOpacity>
                       </View>
                       
                       <View style={{ backgroundColor: ticket.priority === 'HIGH' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>

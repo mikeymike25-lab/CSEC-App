@@ -45,6 +45,15 @@ export default function ScanScreen() {
   const [reportNotes, setReportNotes] = useState('');
   const [isSubmittingLinkReport, setIsSubmittingLinkReport] = useState(false);
   const [reportSuccessMessage, setReportSuccessMessage] = useState<string | null>(null);
+  const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
+  const [feedbackModal, setFeedbackModal] = useState<{
+    visible: boolean;
+    type: 'success' | 'error';
+    title: string;
+    message: string;
+    url?: string;
+    reportCount?: number;
+  } | null>(null);
 
   // --- MODAL & SECURITY STATES ---
   const [isVerificationModalVisible, setIsVerificationModalVisible] = useState(false);
@@ -105,6 +114,17 @@ export default function ScanScreen() {
       setUrl(text); 
     } catch (error) {
       Alert.alert("Error", "Could not paste from clipboard.");
+    }
+  };
+
+  const handleCopyUrl = async (targetUrl: string) => {
+    if (!targetUrl) return;
+    try {
+      await Clipboard.setStringAsync(targetUrl);
+      setCopiedUrl(targetUrl);
+      setTimeout(() => setCopiedUrl(null), 2500);
+    } catch (error) {
+      console.error("Clipboard copy error:", error);
     }
   };
 
@@ -401,13 +421,15 @@ export default function ScanScreen() {
   const handleReportLink = async () => {
     const cleanUrl = url.trim();
     if (!cleanUrl) {
-      if (Platform.OS === 'web') {
-        window.alert("Please input or paste a URL first to submit a report.");
-      } else {
-        Alert.alert("Input Required", "No URL available to report.");
-      }
+      setFeedbackModal({
+        visible: true,
+        type: 'error',
+        title: 'Input Required',
+        message: 'Please paste or enter a URL first to report it.'
+      });
       return;
     }
+
     setIsSubmittingLinkReport(true);
     try {
       const res = await submitLinkForTriage(
@@ -420,22 +442,28 @@ export default function ScanScreen() {
       setReportNotes('');
       setReportSuccessMessage(res.message);
 
-      if (Platform.OS === 'web') {
-        window.alert(`Report Transmitted 🛡️\n\n${res.message}`);
-      } else {
-        Alert.alert(
-          "Report Transmitted 🛡️",
-          res.message || "Link queued in Researcher Triage Sandbox. Our analysts will audit this site."
-        );
-      }
+      // In-App Feedback Modal (No browser alert dialogs or native popups)
+      setFeedbackModal({
+        visible: true,
+        type: 'success',
+        title: 'Report Transmitted 🛡️',
+        message: res.message || 'Link queued in Researcher Triage Sandbox. Our threat analysts will inspect this domain.',
+        url: cleanUrl,
+        reportCount: res.reportCount
+      });
     } catch (err: any) {
       console.error("Link Report Error:", err);
       const errMsg = err?.message || "Could not submit link for review.";
-      if (Platform.OS === 'web') {
-        window.alert(`Submission Error: ${errMsg}\n\nPlease ensure you have published the latest Firestore Security Rules.`);
-      } else {
-        Alert.alert("Submission Notice", errMsg);
-      }
+      setIsReportLinkModalVisible(false);
+
+      // In-App Feedback Modal on error
+      setFeedbackModal({
+        visible: true,
+        type: 'error',
+        title: 'Submission Notice',
+        message: `${errMsg}\n\nPlease ensure your Firebase Firestore Security Rules are published.`,
+        url: cleanUrl
+      });
     } finally {
       setIsSubmittingLinkReport(false);
     }
@@ -578,6 +606,31 @@ export default function ScanScreen() {
                  <Text style={[styles.resultHeaderText, { color: getVerdictColor() }]}>
                     {getVerdictText()}
                  </Text>
+              </View>
+
+              {/* --- COPY SCANNED LINK QUICK ACTION --- */}
+              <View style={styles.resultActionRow}>
+                <TouchableOpacity 
+                  style={[
+                    styles.copyUrlButton, 
+                    { 
+                      backgroundColor: copiedUrl === url ? (isDark ? 'rgba(34, 197, 94, 0.2)' : '#DCFCE7') : (isDark ? '#233240' : '#F1F5F9'),
+                      borderColor: copiedUrl === url ? greenAccent : (isDark ? '#2D4356' : '#CBD5E1')
+                    }
+                  ]}
+                  onPress={() => handleCopyUrl(url)}
+                  activeOpacity={0.7}
+                >
+                  <Feather 
+                    name={copiedUrl === url ? "check" : "copy"} 
+                    size={13} 
+                    color={copiedUrl === url ? greenAccent : (isDark ? '#38BDF8' : '#0284C7')} 
+                    style={{ marginRight: 6 }} 
+                  />
+                  <Text style={[styles.copyUrlButtonText, { color: copiedUrl === url ? greenAccent : (isDark ? '#38BDF8' : '#0284C7') }]}>
+                    {copiedUrl === url ? "LINK COPIED!" : "COPY SCANNED LINK"}
+                  </Text>
+                </TouchableOpacity>
               </View>
 
               {/* --- HIGH-VISIBILITY REPORT / CONTEST BUTTON (RIGHT AT TOP) --- */}
@@ -838,10 +891,31 @@ export default function ScanScreen() {
               Submit this URL to the C-SEC Threat Intelligence sandbox for researcher review.
             </Text>
 
-            <View style={[styles.urlPreviewBox, { backgroundColor: isDark ? '#233240' : '#F1F5F9' }]}>
-              <Text style={[styles.urlPreviewText, { color: textColorPrimary }]} numberOfLines={2}>
+            <View style={[styles.urlPreviewBox, { backgroundColor: isDark ? '#233240' : '#F1F5F9', flexDirection: 'row', alignItems: 'center' }]}>
+              <Text style={[styles.urlPreviewText, { color: textColorPrimary, flex: 1, marginRight: 8 }]} numberOfLines={2}>
                 {url}
               </Text>
+              <TouchableOpacity 
+                style={[
+                  styles.copyBtnPill, 
+                  { 
+                    backgroundColor: copiedUrl === url ? (isDark ? 'rgba(34, 197, 94, 0.2)' : '#DCFCE7') : (isDark ? '#2D4356' : '#E2E8F0'),
+                    borderColor: copiedUrl === url ? greenAccent : 'transparent'
+                  }
+                ]}
+                onPress={() => handleCopyUrl(url)}
+                activeOpacity={0.7}
+              >
+                <Feather 
+                  name={copiedUrl === url ? "check" : "copy"} 
+                  size={12} 
+                  color={copiedUrl === url ? greenAccent : (isDark ? '#4DA8DA' : '#0284C7')} 
+                  style={{ marginRight: 4 }}
+                />
+                <Text style={{ fontSize: 11, fontWeight: '700', color: copiedUrl === url ? greenAccent : (isDark ? '#4DA8DA' : '#0284C7') }}>
+                  {copiedUrl === url ? "Copied" : "Copy"}
+                </Text>
+              </TouchableOpacity>
             </View>
 
             <Text style={[styles.reportSectionLabel, { color: textColorSecondary }]}>SELECT REASON</Text>
@@ -905,6 +979,107 @@ export default function ScanScreen() {
                 )}
               </TouchableOpacity>
             </View>
+            
+          </View>
+        </View>
+      </Modal>
+
+      {/* --- 3-DATABASE PIPELINE: REPORTING FEEDBACK MODAL (NO ALERT POPUPS) --- */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={!!feedbackModal?.visible}
+        onRequestClose={() => setFeedbackModal(null)}
+      >
+        <View style={styles.modalOverlayCenter}>
+          <View style={[
+            styles.modalContainer, 
+            { 
+              backgroundColor: cardColor, 
+              borderColor: feedbackModal?.type === 'success' ? (isDark ? '#38BDF8' : '#0284C7') : redAccent,
+              borderWidth: 1.5,
+              padding: 24,
+              maxWidth: 420
+            }
+          ]}>
+            
+            <View style={[
+              styles.modalIconWrapper, 
+              { 
+                backgroundColor: feedbackModal?.type === 'success' 
+                  ? (isDark ? 'rgba(56, 189, 248, 0.2)' : '#E0F2FE') 
+                  : (isDark ? 'rgba(239, 68, 68, 0.2)' : '#FEE2E2') 
+              }
+            ]}>
+              <MaterialCommunityIcons 
+                name={feedbackModal?.type === 'success' ? "shield-check" : "alert-circle-outline"} 
+                size={34} 
+                color={feedbackModal?.type === 'success' ? (isDark ? '#38BDF8' : '#0284C7') : redAccent} 
+              />
+            </View>
+            
+            <Text style={[styles.modalTitle, { color: textColorPrimary, marginTop: 4, marginBottom: 8 }]}>
+              {feedbackModal?.title || 'Report Status'}
+            </Text>
+
+            {feedbackModal?.url ? (
+              <View style={[styles.feedbackUrlBox, { backgroundColor: isDark ? '#233240' : '#F1F5F9' }]}>
+                <Text style={[styles.feedbackUrlText, { color: textColorPrimary }]} numberOfLines={1}>
+                  {feedbackModal.url}
+                </Text>
+                <TouchableOpacity 
+                  onPress={() => handleCopyUrl(feedbackModal.url!)}
+                  style={[
+                    styles.copyBtnPill, 
+                    { 
+                      backgroundColor: copiedUrl === feedbackModal.url ? (isDark ? 'rgba(34, 197, 94, 0.2)' : '#DCFCE7') : (isDark ? '#2D4356' : '#E2E8F0'),
+                      borderColor: copiedUrl === feedbackModal.url ? greenAccent : 'transparent'
+                    }
+                  ]}
+                >
+                  <Feather name={copiedUrl === feedbackModal.url ? "check" : "copy"} size={11} color={copiedUrl === feedbackModal.url ? greenAccent : (isDark ? '#4DA8DA' : '#0284C7')} style={{ marginRight: 4 }} />
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: copiedUrl === feedbackModal.url ? greenAccent : (isDark ? '#4DA8DA' : '#0284C7') }}>
+                    {copiedUrl === feedbackModal.url ? "Copied" : "Copy"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+            
+            <Text style={[styles.modalBody, { color: textColorSecondary, marginVertical: 12, lineHeight: 20 }]}>
+              {feedbackModal?.message}
+            </Text>
+
+            {feedbackModal?.type === 'success' && (
+              <View style={[styles.pipelineTrackBox, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.1)' : '#ECFDF5', borderColor: greenAccent }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                  <Feather name="check" size={13} color={greenAccent} style={{ marginRight: 6 }} />
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: greenAccent }}>
+                    Staged in Researcher Triage Backlog (DB 3)
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 11, color: isDark ? '#A7F3D0' : '#065F46' }}>
+                  {feedbackModal?.reportCount && feedbackModal.reportCount > 1 
+                    ? `Priority Escalated: Reported ${feedbackModal.reportCount} times.` 
+                    : 'Awaiting analyst review & database promotion.'}
+                </Text>
+              </View>
+            )}
+
+            <TouchableOpacity 
+              style={[
+                styles.modalActionBtn, 
+                { 
+                  backgroundColor: feedbackModal?.type === 'success' ? (isDark ? '#38BDF8' : '#0284C7') : redAccent,
+                  marginTop: 16
+                }
+              ]}
+              activeOpacity={0.8}
+              onPress={() => setFeedbackModal(null)}
+            >
+              <Text style={styles.modalActionBtnText}>
+                {feedbackModal?.type === 'success' ? 'UNDERSTOOD' : 'DISMISS'}
+              </Text>
+            </TouchableOpacity>
             
           </View>
         </View>
@@ -1162,5 +1337,53 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     fontWeight: '600',
+  },
+  resultActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  copyUrlButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  copyUrlButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  copyBtnPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  feedbackUrlBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 12,
+    width: '100%',
+    marginBottom: 8,
+  },
+  feedbackUrlText: {
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+    marginRight: 8,
+  },
+  pipelineTrackBox: {
+    width: '100%',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginVertical: 4,
   },
 });
