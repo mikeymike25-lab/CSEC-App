@@ -19,6 +19,8 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 from v2_feature_extractor import extract_v2_features, is_safe_target_url
+import tldextract
+_TLD_EXTRACTOR = tldextract.TLDExtract(cache_dir=os.path.join(BASE_DIR, '.tld_cache'))
 
 
 try:
@@ -463,9 +465,14 @@ def analyze_link():
         parsed = urlparse(target_url if target_url.startswith(('http://', 'https://')) else 'http://' + target_url)
         domain = parsed.netloc.replace('www.', '')
 
+        # Extract root registered domain for subdomain matching (e.g. tip.instructure.com -> instructure.com)
+        ext = _TLD_EXTRACTOR(domain)
+        reg_domain = ext.top_domain_under_public_suffix or domain
+
         # --- GATE 0.5: DYNAMIC THREAT INTEL OVERRIDES (ADMIN PERSISTED) ---
         dynamic_wl, dynamic_bl = get_threat_intel_overrides()
-        if target_url in dynamic_bl or domain in dynamic_bl or any(b in target_url for b in dynamic_bl):
+        if (target_url in dynamic_bl or domain in dynamic_bl or reg_domain in dynamic_bl 
+            or any(b in target_url for b in dynamic_bl)):
             verdict_str = "Phishing"
             proto_str = "Global Blacklist (Threat Intel)"
             conf_pct = 100.0
@@ -481,7 +488,8 @@ def analyze_link():
                 "status": "success"
             })
 
-        if target_url in dynamic_wl or domain in dynamic_wl or any(w in domain for w in dynamic_wl):
+        if (target_url in dynamic_wl or domain in dynamic_wl or reg_domain in dynamic_wl 
+            or any(w in domain for w in dynamic_wl)):
             verdict_str = "Safe"
             proto_str = "Platform Whitelist (Threat Intel)"
             conf_pct = 100.0
@@ -498,7 +506,7 @@ def analyze_link():
             })
 
         # --- GATE 1: BLACKLIST CHECK ---
-        if target_url in blacklist_urls or domain in blacklist_urls:
+        if target_url in blacklist_urls or domain in blacklist_urls or reg_domain in blacklist_urls:
             verdict_str = "Phishing"
             proto_str = "Blacklist Protocol"
             conf_pct = 100.0
@@ -515,7 +523,7 @@ def analyze_link():
             })
 
         # --- GATE 2: WHITELIST CHECK ---
-        if domain in whitelist_domains:
+        if domain in whitelist_domains or reg_domain in whitelist_domains:
             verdict_str = "Safe"
             proto_str = "Whitelist Protocol"
             conf_pct = 100.0

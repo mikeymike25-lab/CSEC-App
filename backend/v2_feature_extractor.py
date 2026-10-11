@@ -64,14 +64,8 @@ TRUSTED_ISSUERS = [
 _DOMAIN_CACHE = {}
 _CACHE_TTL_SECONDS = 3600  # 1 Hour
 
-# Global persistent Daemon ThreadPool for concurrent active probes (reused across requests)
-class DaemonThreadPoolExecutor(concurrent.futures.ThreadPoolExecutor):
-    def _adjust_thread_count(self):
-        super()._adjust_thread_count()
-        for t in self._threads:
-            t.daemon = True
-
-_EXECUTOR = DaemonThreadPoolExecutor(max_workers=8)
+# Global persistent ThreadPool for concurrent active probes (reused across requests)
+_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=8, thread_name_prefix="csec_telemetry")
 
 # -------------------------------------------------------------
 # 2. SSRF & DNS VALIDATION GUARD
